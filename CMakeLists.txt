@@ -16,8 +16,8 @@ add_subdirectory(./ext/glm SYSTEM)
 
 if(MSVC)
   set(VULKAN_PLAYGROUND_FLAGS
-    /W4
-    /wd26439
+    /Wall
+    /wd4820
     /external:anglebrackets
     /external:W0
     /analyze:external-

@@ -52,4 +52,5 @@ private:
 	VkFormat m_swapchain_format;
 	VkExtent2D m_swapchain_extent;
 	std::vector<VkImageView> m_image_views;
+	VkPipelineLayout m_pipeline_layout;
 };

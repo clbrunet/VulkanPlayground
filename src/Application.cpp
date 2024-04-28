@@ -19,7 +19,8 @@ Application::Application() {
 }
 
 Application::~Application() {
-	for (auto const image_view : m_image_views) {\
+	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+	for (auto const image_view : m_image_views) {
 		vkDestroyImageView(m_device, image_view, nullptr);
 	}
 	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
@@ -360,10 +361,68 @@ void Application::create_graphics_pipeline() {
 	fragment_shader_stage_create_info.module = fragment_shader_module;
 	fragment_shader_stage_create_info.pName = "main";
 
-	auto shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2>{
+	auto const shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2>{
 		vertex_shader_stage_create_info,
 		fragment_shader_stage_create_info
 	};
+
+	auto vertex_input_state_create_info = VkPipelineVertexInputStateCreateInfo{};
+	vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertex_input_state_create_info.vertexBindingDescriptionCount = 0;
+	vertex_input_state_create_info.vertexAttributeDescriptionCount = 0;
+
+	auto input_assembly_state_create_info = VkPipelineInputAssemblyStateCreateInfo{};
+	input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	input_assembly_state_create_info.primitiveRestartEnable = VK_FALSE;
+
+	auto viewport_state_create_info = VkPipelineViewportStateCreateInfo{};
+	viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport_state_create_info.viewportCount = 1;
+	viewport_state_create_info.scissorCount = 1;
+
+	auto rasterization_state_create_info = VkPipelineRasterizationStateCreateInfo{};
+	rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterization_state_create_info.depthClampEnable = VK_FALSE;
+	rasterization_state_create_info.rasterizerDiscardEnable = VK_FALSE;
+	rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterization_state_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterization_state_create_info.depthBiasEnable = VK_FALSE;
+	rasterization_state_create_info.lineWidth = 1.f;
+
+	auto multisample_state_create_info = VkPipelineMultisampleStateCreateInfo{};
+	multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample_state_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisample_state_create_info.sampleShadingEnable = VK_FALSE;
+
+	auto color_blend_attachment_state = VkPipelineColorBlendAttachmentState{};
+	color_blend_attachment_state.blendEnable = VK_FALSE;
+	color_blend_attachment_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+	auto color_blend_state_create_info = VkPipelineColorBlendStateCreateInfo{};
+	color_blend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	color_blend_state_create_info.logicOpEnable = VK_FALSE;
+	color_blend_state_create_info.attachmentCount = 1;
+	color_blend_state_create_info.pAttachments = &color_blend_attachment_state;
+
+	auto const dynamic_states = std::array<VkDynamicState, 2>{
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR
+	};
+	auto dynamic_state_create_info = VkPipelineDynamicStateCreateInfo{};
+	dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state_create_info.dynamicStateCount = std::size(dynamic_states);
+	dynamic_state_create_info.pDynamicStates = std::data(dynamic_states);
+
+	auto pipeline_layout_create_info = VkPipelineLayoutCreateInfo{};
+	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout_create_info.setLayoutCount = 0;
+	pipeline_layout_create_info.pushConstantRangeCount = 0;
+
+	if (vkCreatePipelineLayout(m_device, &pipeline_layout_create_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreatePipelineLayout" };
+	}
 
 	vkDestroyShaderModule(m_device, vertex_shader_module, nullptr);
 	vkDestroyShaderModule(m_device, fragment_shader_module, nullptr);
@@ -394,6 +453,7 @@ VkShaderModule Application::create_shader_module(std::string shader) const {
 	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	create_info.codeSize = std::size(*code);
 	create_info.pCode = reinterpret_cast<uint32_t const*>(std::data(*code));
+
 	auto shader_module = VkShaderModule{};
 	if (vkCreateShaderModule(m_device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateShaderModule for \"" + spirv_path + '"' };

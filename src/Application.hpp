@@ -55,4 +55,5 @@ private:
 	std::vector<VkImageView> m_image_views;
 	VkRenderPass m_render_pass;
 	VkPipelineLayout m_pipeline_layout;
+	VkPipeline m_graphics_pipeline;
 };

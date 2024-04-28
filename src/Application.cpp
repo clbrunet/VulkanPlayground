@@ -19,6 +19,7 @@ Application::Application() {
 }
 
 Application::~Application() {
+	vkDestroyPipeline(m_device, m_graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
 	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
 	for (auto const image_view : m_image_views) {
@@ -311,9 +312,11 @@ void Application::create_swapchain() {
 	create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	create_info.clipped = VK_TRUE;
 	create_info.oldSwapchain = VK_NULL_HANDLE;
+
 	if (vkCreateSwapchainKHR(m_device, &create_info, nullptr, &m_swapchain) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateSwapchainKHR" };
 	}
+
 	auto image_count = uint32_t{};
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, nullptr);
 	m_swapchain_images.resize(image_count);
@@ -459,6 +462,27 @@ void Application::create_graphics_pipeline() {
 		throw std::runtime_error{ "vkCreatePipelineLayout" };
 	}
 
+	auto create_info = VkGraphicsPipelineCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	create_info.stageCount = 2u;
+	create_info.pStages = std::data(shader_stages);
+	create_info.pVertexInputState = &vertex_input_state_create_info;
+	create_info.pInputAssemblyState = &input_assembly_state_create_info;
+	create_info.pTessellationState = nullptr;
+	create_info.pViewportState = &viewport_state_create_info;
+	create_info.pRasterizationState = &rasterization_state_create_info;
+	create_info.pMultisampleState = &multisample_state_create_info;
+	create_info.pDepthStencilState = nullptr;
+	create_info.pColorBlendState = &color_blend_state_create_info;
+	create_info.pDynamicState = &dynamic_state_create_info;
+	create_info.layout = m_pipeline_layout;
+	create_info.renderPass = m_render_pass;
+	create_info.subpass = 0u;
+
+	if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1u, &create_info, nullptr, &m_graphics_pipeline) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateGraphicsPipelines" };
+	}
+
 	vkDestroyShaderModule(m_device, vertex_shader_module, nullptr);
 	vkDestroyShaderModule(m_device, fragment_shader_module, nullptr);
 }
@@ -472,6 +496,7 @@ static std::optional<std::vector<uint8_t>> read_binary_file(std::string const& p
 	if (!file) {
 		return std::nullopt;
 	}
+
 	auto bytes = std::vector<uint8_t>(static_cast<size_t>(file.tellg()));
 	file.seekg(0);
 	file.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
@@ -484,6 +509,7 @@ VkShaderModule Application::create_shader_module(std::string shader) const {
 	if (!code) {
 		throw std::runtime_error{ "cannot read \"" + spirv_path + '"' };
 	}
+
 	auto create_info = VkShaderModuleCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	create_info.codeSize = std::size(*code);

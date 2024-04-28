@@ -36,6 +36,9 @@ private:
 	void create_swapchain();
 	void create_image_views();
 
+	void create_graphics_pipeline();
+	VkShaderModule create_shader_module(std::string shader) const;
+
 private:
 	GLFWwindow* m_window;
 	VkInstance m_instance;

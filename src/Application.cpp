@@ -6,6 +6,10 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <limits>
+#include <functional>
+#include <fstream>
+#include <optional>
 
 auto constexpr VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 
@@ -53,6 +57,7 @@ void Application::init_vulkan() {
 	create_device();
 	create_swapchain();
 	create_image_views();
+	create_graphics_pipeline();
 }
 
 void Application::create_instance() {
@@ -250,11 +255,11 @@ void Application::create_swapchain() {
 	vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_surface, &surface_format_count, nullptr);
 	auto surface_formats = std::vector<VkSurfaceFormatKHR>{ surface_format_count };
 	vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_surface, &surface_format_count, std::data(surface_formats));
-	auto surface_format = std::find_if(std::cbegin(surface_formats), std::cend(surface_formats), [](VkSurfaceFormatKHR surface_format) {
+	auto surface_format_it = std::find_if(std::cbegin(surface_formats), std::cend(surface_formats), [](VkSurfaceFormatKHR surface_format) {
 		return surface_format.format == VK_FORMAT_B8G8R8A8_SRGB && surface_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	});
-	if (surface_format == std::cend(surface_formats)) {
-		surface_format = std::cbegin(surface_formats);
+	if (surface_format_it == std::cend(surface_formats)) {
+		surface_format_it = std::cbegin(surface_formats);
 	}
 
 	auto const image_extent = std::invoke([&]() {
@@ -290,8 +295,8 @@ void Application::create_swapchain() {
 	create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create_info.surface = m_surface;
 	create_info.minImageCount = min_image_count;
-	create_info.imageFormat = surface_format->format;
-	create_info.imageColorSpace = surface_format->colorSpace;
+	create_info.imageFormat = surface_format_it->format;
+	create_info.imageColorSpace = surface_format_it->colorSpace;
 	create_info.imageExtent = image_extent;
 	create_info.imageArrayLayers = 1u;
 	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -310,7 +315,7 @@ void Application::create_swapchain() {
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, nullptr);
 	m_swapchain_images.resize(image_count);
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, std::data(m_swapchain_images));
-	m_swapchain_format = surface_format->format;
+	m_swapchain_format = surface_format_it->format;
 	m_swapchain_extent = image_extent;
 }
 
@@ -337,4 +342,61 @@ void Application::create_image_views() {
 		}
 		return image_view;
 	});
+}
+
+void Application::create_graphics_pipeline() {
+	auto const vertex_shader_module = create_shader_module("triangle.vert");
+	auto const fragment_shader_module = create_shader_module("triangle.frag");
+
+	auto vertex_shader_stage_create_info = VkPipelineShaderStageCreateInfo{};
+	vertex_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertex_shader_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertex_shader_stage_create_info.module = vertex_shader_module;
+	vertex_shader_stage_create_info.pName = "main";
+
+	auto fragment_shader_stage_create_info = VkPipelineShaderStageCreateInfo{};
+	fragment_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragment_shader_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragment_shader_stage_create_info.module = fragment_shader_module;
+	fragment_shader_stage_create_info.pName = "main";
+
+	auto shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2>{
+		vertex_shader_stage_create_info,
+		fragment_shader_stage_create_info
+	};
+
+	vkDestroyShaderModule(m_device, vertex_shader_module, nullptr);
+	vkDestroyShaderModule(m_device, fragment_shader_module, nullptr);
+}
+
+static std::string get_spirv_shader_path(std::string shader) {
+	return SPIRV_SHADERS_DIRECTORY + ("/" + std::move(shader) + ".spv");
+}
+
+static std::optional<std::vector<uint8_t>> read_binary_file(std::string const& path) {
+	auto file = std::ifstream{ path, std::ios::ate | std::ios::binary };
+	if (!file) {
+		return std::nullopt;
+	}
+	auto bytes = std::vector<uint8_t>(file.tellg());
+	file.seekg(0);
+	file.read(reinterpret_cast<char*>(std::data(bytes)), std::size(bytes));
+	return std::make_optional(std::move(bytes));
+}
+
+VkShaderModule Application::create_shader_module(std::string shader) const {
+	auto const spirv_path = get_spirv_shader_path(std::move(shader));
+	auto const code = read_binary_file(spirv_path);
+	if (!code) {
+		throw std::runtime_error{ "cannot read \"" + spirv_path + '"' };
+	}
+	auto create_info = VkShaderModuleCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.codeSize = std::size(*code);
+	create_info.pCode = reinterpret_cast<uint32_t const*>(std::data(*code));
+	auto shader_module = VkShaderModule{};
+	if (vkCreateShaderModule(m_device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateShaderModule for \"" + spirv_path + '"' };
+	}
+	return shader_module;
 }

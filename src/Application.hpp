@@ -36,6 +36,7 @@ private:
 	void create_swapchain();
 	void create_image_views();
 
+	void create_render_pass();
 	void create_graphics_pipeline();
 	VkShaderModule create_shader_module(std::string shader) const;
 
@@ -52,5 +53,6 @@ private:
 	VkFormat m_swapchain_format;
 	VkExtent2D m_swapchain_extent;
 	std::vector<VkImageView> m_image_views;
+	VkRenderPass m_render_pass;
 	VkPipelineLayout m_pipeline_layout;
 };

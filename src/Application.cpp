@@ -20,6 +20,7 @@ Application::Application() {
 
 Application::~Application() {
 	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
 	for (auto const image_view : m_image_views) {
 		vkDestroyImageView(m_device, image_view, nullptr);
 	}
@@ -58,6 +59,7 @@ void Application::init_vulkan() {
 	create_device();
 	create_swapchain();
 	create_image_views();
+	create_render_pass();
 	create_graphics_pipeline();
 }
 
@@ -65,9 +67,9 @@ void Application::create_instance() {
 	auto application_info = VkApplicationInfo{};
 	application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	application_info.pApplicationName = "Vulkan Playground";
-	application_info.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+	application_info.applicationVersion = VK_MAKE_VERSION(0u, 1u, 0u);
 	application_info.pEngineName = "No Engine";
-	application_info.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+	application_info.engineVersion = VK_MAKE_VERSION(0u, 1u, 0u);
 	application_info.apiVersion = VK_API_VERSION_1_0;
 
 	auto glfw_extension_count = uint32_t{};
@@ -195,8 +197,8 @@ void Application::create_device() {
 	if (vkCreateDevice(m_physical_device, &create_info, nullptr, &m_device) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateDevice" };
 	}
-	vkGetDeviceQueue(m_device, queue_family_indices.graphics, 0, &m_graphics_queue);
-	vkGetDeviceQueue(m_device, queue_family_indices.graphics, 0, &m_present_queue);
+	vkGetDeviceQueue(m_device, queue_family_indices.graphics, 0u, &m_graphics_queue);
+	vkGetDeviceQueue(m_device, queue_family_indices.graphics, 0u, &m_present_queue);
 }
 
 Application::QueueFamilyIndices Application::get_queue_family_indices() const {
@@ -247,8 +249,8 @@ void Application::create_swapchain() {
 	auto surface_capabilities = VkSurfaceCapabilitiesKHR{};
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_surface, &surface_capabilities);
 
-	auto min_image_count = surface_capabilities.minImageCount + 1;
-	if (surface_capabilities.maxImageCount > 0) {
+	auto min_image_count = surface_capabilities.minImageCount + 1u;
+	if (surface_capabilities.maxImageCount > 0u) {
 		min_image_count = std::min(min_image_count, surface_capabilities.maxImageCount);
 	}
 
@@ -277,18 +279,18 @@ void Application::create_swapchain() {
 	});
 
 	auto const physical_device_queue_family_indices = get_queue_family_indices();
-	auto const queue_family_indices = std::array<uint32_t, 2>{{
-			physical_device_queue_family_indices.graphics,
-				physical_device_queue_family_indices.present
-		}};
+	auto const queue_family_indices = std::array<uint32_t, 2u>{{
+		physical_device_queue_family_indices.graphics,
+		physical_device_queue_family_indices.present
+	}};
 	auto const [sharing_mode, queue_family_index_count] = std::invoke([&]() {
 		if (m_graphics_queue != m_present_queue) {
 			return std::tuple<VkSharingMode, uint32_t>{
-				VK_SHARING_MODE_CONCURRENT, 2
+				VK_SHARING_MODE_CONCURRENT, 2u
 			};
 		}
 		return std::tuple<VkSharingMode, uint32_t>{
-			VK_SHARING_MODE_EXCLUSIVE, 0
+			VK_SHARING_MODE_EXCLUSIVE, 0u
 		};
 	});
 
@@ -333,16 +335,49 @@ void Application::create_image_views() {
 		create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		create_info.subresourceRange.baseMipLevel = 0;
-		create_info.subresourceRange.levelCount = 1;
-		create_info.subresourceRange.baseArrayLayer = 0;
-		create_info.subresourceRange.layerCount = 1;
+		create_info.subresourceRange.baseMipLevel = 0u;
+		create_info.subresourceRange.levelCount = 1u;
+		create_info.subresourceRange.baseArrayLayer = 0u;
+		create_info.subresourceRange.layerCount = 1u;
+
 		auto image_view = VkImageView{};
 		if (vkCreateImageView(m_device, &create_info, nullptr, &image_view) != VK_SUCCESS) {
 			throw std::runtime_error{ "vkCreateImageView" };
 		}
 		return image_view;
 	});
+}
+
+void Application::create_render_pass() {
+	auto attachment_description = VkAttachmentDescription{};
+	attachment_description.format = m_swapchain_format;
+	attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
+	attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	auto attachment_reference = VkAttachmentReference{};
+	attachment_reference.attachment = 0u;
+	attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	auto subpass_description = VkSubpassDescription{};
+	subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass_description.colorAttachmentCount = 1u;
+	subpass_description.pColorAttachments = &attachment_reference;
+
+	auto create_info = VkRenderPassCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	create_info.attachmentCount = 1u;
+	create_info.pAttachments = &attachment_description;
+	create_info.subpassCount = 1u;
+	create_info.pSubpasses = &subpass_description;
+
+	if (vkCreateRenderPass(m_device, &create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateRenderPass" };
+	}
 }
 
 void Application::create_graphics_pipeline() {
@@ -361,15 +396,15 @@ void Application::create_graphics_pipeline() {
 	fragment_shader_stage_create_info.module = fragment_shader_module;
 	fragment_shader_stage_create_info.pName = "main";
 
-	auto const shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2>{
+	auto const shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2u>{
 		vertex_shader_stage_create_info,
 		fragment_shader_stage_create_info
 	};
 
 	auto vertex_input_state_create_info = VkPipelineVertexInputStateCreateInfo{};
 	vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_state_create_info.vertexBindingDescriptionCount = 0;
-	vertex_input_state_create_info.vertexAttributeDescriptionCount = 0;
+	vertex_input_state_create_info.vertexBindingDescriptionCount = 0u;
+	vertex_input_state_create_info.vertexAttributeDescriptionCount = 0u;
 
 	auto input_assembly_state_create_info = VkPipelineInputAssemblyStateCreateInfo{};
 	input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -378,8 +413,8 @@ void Application::create_graphics_pipeline() {
 
 	auto viewport_state_create_info = VkPipelineViewportStateCreateInfo{};
 	viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewport_state_create_info.viewportCount = 1;
-	viewport_state_create_info.scissorCount = 1;
+	viewport_state_create_info.viewportCount = 1u;
+	viewport_state_create_info.scissorCount = 1u;
 
 	auto rasterization_state_create_info = VkPipelineRasterizationStateCreateInfo{};
 	rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -403,22 +438,22 @@ void Application::create_graphics_pipeline() {
 	auto color_blend_state_create_info = VkPipelineColorBlendStateCreateInfo{};
 	color_blend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	color_blend_state_create_info.logicOpEnable = VK_FALSE;
-	color_blend_state_create_info.attachmentCount = 1;
+	color_blend_state_create_info.attachmentCount = 1u;
 	color_blend_state_create_info.pAttachments = &color_blend_attachment_state;
 
-	auto const dynamic_states = std::array<VkDynamicState, 2>{
+	auto const dynamic_states = std::array<VkDynamicState, 2u>{{
 		VK_DYNAMIC_STATE_VIEWPORT,
 		VK_DYNAMIC_STATE_SCISSOR
-	};
+	}};
 	auto dynamic_state_create_info = VkPipelineDynamicStateCreateInfo{};
 	dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamic_state_create_info.dynamicStateCount = std::size(dynamic_states);
+	dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(std::size(dynamic_states));
 	dynamic_state_create_info.pDynamicStates = std::data(dynamic_states);
 
 	auto pipeline_layout_create_info = VkPipelineLayoutCreateInfo{};
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_create_info.setLayoutCount = 0;
-	pipeline_layout_create_info.pushConstantRangeCount = 0;
+	pipeline_layout_create_info.setLayoutCount = 0u;
+	pipeline_layout_create_info.pushConstantRangeCount = 0u;
 
 	if (vkCreatePipelineLayout(m_device, &pipeline_layout_create_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreatePipelineLayout" };
@@ -437,9 +472,9 @@ static std::optional<std::vector<uint8_t>> read_binary_file(std::string const& p
 	if (!file) {
 		return std::nullopt;
 	}
-	auto bytes = std::vector<uint8_t>(file.tellg());
+	auto bytes = std::vector<uint8_t>(static_cast<size_t>(file.tellg()));
 	file.seekg(0);
-	file.read(reinterpret_cast<char*>(std::data(bytes)), std::size(bytes));
+	file.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
 	return std::make_optional(std::move(bytes));
 }
 

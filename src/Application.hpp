@@ -40,6 +40,8 @@ private:
 	void create_graphics_pipeline();
 	VkShaderModule create_shader_module(std::string shader) const;
 
+	void create_framebuffers();
+
 private:
 	GLFWwindow* m_window;
 	VkInstance m_instance;
@@ -56,4 +58,5 @@ private:
 	VkRenderPass m_render_pass;
 	VkPipelineLayout m_pipeline_layout;
 	VkPipeline m_graphics_pipeline;
+	std::vector<VkFramebuffer> m_framebuffers;
 };

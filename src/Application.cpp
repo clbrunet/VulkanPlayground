@@ -19,6 +19,9 @@ Application::Application() {
 }
 
 Application::~Application() {
+	for (auto const framebuffer : m_framebuffers) {
+		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+	}
 	vkDestroyPipeline(m_device, m_graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
 	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
@@ -62,6 +65,7 @@ void Application::init_vulkan() {
 	create_image_views();
 	create_render_pass();
 	create_graphics_pipeline();
+	create_framebuffers();
 }
 
 void Application::create_instance() {
@@ -520,4 +524,24 @@ VkShaderModule Application::create_shader_module(std::string shader) const {
 		throw std::runtime_error{ "vkCreateShaderModule for \"" + spirv_path + '"' };
 	}
 	return shader_module;
+}
+
+void Application::create_framebuffers() {
+	std::transform(std::cbegin(m_image_views), std::cend(m_image_views),
+		std::back_inserter(m_framebuffers), [&](VkImageView const image_view) {
+		auto create_info = VkFramebufferCreateInfo{};
+		create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		create_info.renderPass = m_render_pass;
+		create_info.attachmentCount = 1u;
+		create_info.pAttachments = &image_view;
+		create_info.width = m_swapchain_extent.width;
+		create_info.height = m_swapchain_extent.height;
+		create_info.layers = 1u;
+
+		auto framebuffer = VkFramebuffer{};
+		if (vkCreateFramebuffer(m_device, &create_info, nullptr, &framebuffer) != VK_SUCCESS) {
+			throw std::runtime_error{ "vkCreateFramebuffer" };
+		}
+		return framebuffer;
+	});
 }

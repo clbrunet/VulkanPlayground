@@ -19,6 +19,7 @@ Application::Application() {
 }
 
 Application::~Application() {
+	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
 	for (auto const framebuffer : m_framebuffers) {
 		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	}
@@ -66,6 +67,8 @@ void Application::init_vulkan() {
 	create_render_pass();
 	create_graphics_pipeline();
 	create_framebuffers();
+	create_command_pool();
+	create_command_buffer();
 }
 
 void Application::create_instance() {
@@ -544,4 +547,72 @@ void Application::create_framebuffers() {
 		}
 		return framebuffer;
 	});
+}
+
+void Application::create_command_pool() {
+	auto create_info = VkCommandPoolCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	create_info.queueFamilyIndex = get_queue_family_indices().graphics;
+
+	if (vkCreateCommandPool(m_device, &create_info, nullptr, &m_command_pool) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateCommandPool" };
+	}
+}
+
+void Application::create_command_buffer() {
+	auto allocate_info = VkCommandBufferAllocateInfo{};
+	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate_info.commandPool = m_command_pool;
+	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate_info.commandBufferCount = 1u;
+
+	if (vkAllocateCommandBuffers(m_device, &allocate_info, &m_command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkAllocateCommandBuffers" };
+	}
+}
+
+void Application::record_command_buffer(VkCommandBuffer const command_buffer, uint32_t const image_index) {
+	auto begin_info = VkCommandBufferBeginInfo{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+	if(vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkBeginCommandBuffer" };
+	}
+
+	auto clear_value = VkClearValue{ VkClearColorValue{ 0.f, 0.f, 0.f, 1.f } };
+	auto render_pass_begin_info = VkRenderPassBeginInfo{};
+	render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	render_pass_begin_info.renderPass = m_render_pass;
+	render_pass_begin_info.framebuffer = m_framebuffers[image_index];
+	render_pass_begin_info.renderArea.offset = VkOffset2D{ 0, 0 };
+	render_pass_begin_info.renderArea.extent = m_swapchain_extent;
+	render_pass_begin_info.clearValueCount = 1u;
+	render_pass_begin_info.pClearValues = &clear_value;
+
+	vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
+
+	auto viewport = VkViewport{};
+	viewport.x = 0.f;
+	viewport.y = 0.f;
+	viewport.width = static_cast<float>(m_swapchain_extent.width);
+	viewport.height = static_cast<float>(m_swapchain_extent.height);
+	viewport.minDepth = 0.f;
+	viewport.maxDepth = 1.f;
+	vkCmdSetViewport(command_buffer, 0u, 1u, &viewport);
+
+	auto scissor = VkRect2D{};
+	scissor.offset = VkOffset2D{ 0, 0 };
+	scissor.extent = m_swapchain_extent;
+	vkCmdSetScissor(command_buffer, 0u, 1u, &scissor);
+
+	vkCmdDraw(command_buffer, 3u, 1u, 0u, 0u);
+
+	vkCmdEndRenderPass(command_buffer);
+
+	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkEndCommandBuffer" };
+	}
 }

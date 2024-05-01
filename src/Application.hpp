@@ -4,6 +4,8 @@
 
 #include <string_view>
 #include <vector>
+#include <array>
+#include <cstdint>
 
 class Application {
 public:
@@ -43,7 +45,7 @@ private:
 	void create_framebuffers();
 
 	void create_command_pool();
-	void create_command_buffer();
+	void create_command_buffers();
 
 	void create_sync_objects();
 
@@ -52,6 +54,8 @@ private:
 	void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index);
 
 private:
+	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
+
 	GLFWwindow* m_window;
 	VkInstance m_instance;
 	VkSurfaceKHR m_surface;
@@ -69,8 +73,9 @@ private:
 	VkPipeline m_graphics_pipeline;
 	std::vector<VkFramebuffer> m_framebuffers;
 	VkCommandPool m_command_pool;
-	VkCommandBuffer m_command_buffer;
-	VkSemaphore m_image_available_semaphore;
-	VkSemaphore m_render_finished_semaphore;
-	VkFence m_in_flight_fence;
+	std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
+	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;
+	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_render_finished_semaphores;
+	std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_in_flight_fences;
+	uint8_t m_current_in_flight_frame_index = 0u;
 };

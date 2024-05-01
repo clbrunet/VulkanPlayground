@@ -45,6 +45,10 @@ private:
 	void create_command_pool();
 	void create_command_buffer();
 
+	void create_sync_objects();
+
+	void draw_frame();
+
 	void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index);
 
 private:
@@ -66,4 +70,7 @@ private:
 	std::vector<VkFramebuffer> m_framebuffers;
 	VkCommandPool m_command_pool;
 	VkCommandBuffer m_command_buffer;
+	VkSemaphore m_image_available_semaphore;
+	VkSemaphore m_render_finished_semaphore;
+	VkFence m_in_flight_fence;
 };

@@ -27,16 +27,10 @@ Application::~Application() {
 		vkDestroySemaphore(m_device, image_available_semaphore, nullptr);
 	}
 	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
-	for (auto const framebuffer : m_framebuffers) {
-		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-	}
+	clean_swapchain();
 	vkDestroyPipeline(m_device, m_graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
 	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
-	for (auto const image_view : m_image_views) {
-		vkDestroyImageView(m_device, image_view, nullptr);
-	}
-	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 	vkDestroyDevice(m_device, nullptr);
 	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 	vkDestroyInstance(m_instance, nullptr);
@@ -52,11 +46,13 @@ void Application::run() {
 	vkDeviceWaitIdle(m_device);
 }
 
+void Application::set_has_window_been_resized() {
+	m_has_window_been_resized = true;
+}
+
 void Application::init_window() {
 	glfwInit();
-
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	auto constexpr WIDTH = 1280u;
 	auto constexpr HEIGHT = 720u;
@@ -64,6 +60,11 @@ void Application::init_window() {
 	if (!m_window) {
 		throw std::runtime_error{ "glfwCreateWindow" };
 	}
+
+	glfwSetWindowUserPointer(m_window, this);
+	glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* const window, [[maybe_unused]] int const width, [[maybe_unused]] int const height) noexcept {
+		reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))->set_has_window_been_resized();
+	});
 }
 
 void Application::init_vulkan() {
@@ -338,6 +339,7 @@ void Application::create_swapchain() {
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, nullptr);
 	m_swapchain_images.resize(image_count);
 	vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, std::data(m_swapchain_images));
+
 	m_swapchain_format = surface_format_it->format;
 	m_swapchain_extent = image_extent;
 }
@@ -626,10 +628,17 @@ void Application::draw_frame() {
 	auto const& render_finished_semaphore = m_render_finished_semaphores[m_current_in_flight_frame_index];
 
 	vkWaitForFences(m_device, 1u, &in_flight_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
-	vkResetFences(m_device, 1u, &in_flight_fence);
 
 	auto image_index = uint32_t{};
-	vkAcquireNextImageKHR(m_device, m_swapchain, std::numeric_limits<uint64_t>::max(), image_available_semaphore, VK_NULL_HANDLE, &image_index); // TODO handle return value
+	auto result = vkAcquireNextImageKHR(m_device, m_swapchain, std::numeric_limits<uint64_t>::max(), image_available_semaphore, VK_NULL_HANDLE, &image_index);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreate_swapchain();
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		throw std::runtime_error{ "vkAcquireNextImageKHR" };
+	}
+
+	vkResetFences(m_device, 1u, &in_flight_fence);
 
 	vkResetCommandBuffer(command_buffer, 0);
 	record_command_buffer(command_buffer, image_index);
@@ -657,7 +666,12 @@ void Application::draw_frame() {
 	present_info.pSwapchains = &m_swapchain;
 	present_info.pImageIndices = &image_index;
 
-	vkQueuePresentKHR(m_graphics_queue, &present_info);
+	result = vkQueuePresentKHR(m_graphics_queue, &present_info);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_has_window_been_resized) {
+		recreate_swapchain();
+	} else if (result != VK_SUCCESS) {
+		throw std::runtime_error{ "vkQueuePresentKHR" };
+	}
 
 	m_current_in_flight_frame_index = (m_current_in_flight_frame_index + 1u) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -705,4 +719,37 @@ void Application::record_command_buffer(VkCommandBuffer const command_buffer, ui
 	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkEndCommandBuffer" };
 	}
+}
+
+void Application::recreate_swapchain() {
+	auto width = int{};
+	auto height = int{};
+	glfwGetFramebufferSize(m_window, &width, &height);
+	while (width == 0 || height == 0) {
+		glfwWaitEvents();
+		glfwGetFramebufferSize(m_window, &width, &height);
+	}
+
+	vkDeviceWaitIdle(m_device);
+
+	clean_swapchain();
+
+	create_swapchain();
+	create_image_views();
+	create_framebuffers();
+
+	m_has_window_been_resized = false;
+}
+
+void Application::clean_swapchain() {
+	for (auto const framebuffer : m_framebuffers) {
+		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+	}
+	m_framebuffers.clear();
+	for (auto const image_view : m_image_views) {
+		vkDestroyImageView(m_device, image_view, nullptr);
+	}
+	m_image_views.clear();
+	m_swapchain_images.clear();
+	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 }

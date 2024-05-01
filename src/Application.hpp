@@ -14,6 +14,8 @@ public:
 
 	void run();
 
+	void set_has_window_been_resized();
+
 private:
 	void init_window();
 	void init_vulkan();
@@ -50,28 +52,35 @@ private:
 	void create_sync_objects();
 
 	void draw_frame();
-
 	void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index);
+
+	void recreate_swapchain();
+	void clean_swapchain();
 
 private:
 	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
 
 	GLFWwindow* m_window;
+	bool m_has_window_been_resized = false;
 	VkInstance m_instance;
 	VkSurfaceKHR m_surface;
+
 	VkPhysicalDevice m_physical_device;
 	VkDevice m_device;
 	VkQueue m_graphics_queue;
 	VkQueue m_present_queue;
+
 	VkSwapchainKHR m_swapchain;
 	std::vector<VkImage> m_swapchain_images;
 	VkFormat m_swapchain_format;
 	VkExtent2D m_swapchain_extent;
 	std::vector<VkImageView> m_image_views;
+	std::vector<VkFramebuffer> m_framebuffers;
+
 	VkRenderPass m_render_pass;
 	VkPipelineLayout m_pipeline_layout;
 	VkPipeline m_graphics_pipeline;
-	std::vector<VkFramebuffer> m_framebuffers;
+
 	VkCommandPool m_command_pool;
 	std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
 	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;

@@ -9,7 +9,9 @@
 #include <fstream>
 #include <optional>
 
+#ifndef NDEBUG
 auto constexpr VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
+#endif
 
 Application::Application() {
 	init_window();

@@ -25,6 +25,8 @@ if(MSVC)
   set(VULKAN_PLAYGROUND_FLAGS
     /Wall
     /wd4820
+    /wd4710
+    /wd4711
     /external:anglebrackets
     /external:W0
     /analyze:external-

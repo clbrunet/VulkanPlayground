@@ -150,6 +150,10 @@ void Application::select_physical_device() {
 	if (best_score == 0u) {
 		throw std::runtime_error{ "no suitable GPU found" };
 	}
+
+	auto properties = VkPhysicalDeviceProperties{};
+	vkGetPhysicalDeviceProperties(m_physical_device, &properties);
+	std::cout << "Selected GPU : " << properties.deviceName << std::endl;
 }
 
 uint32_t Application::get_physical_device_score(VkPhysicalDevice physical_device) const {
@@ -176,7 +180,20 @@ uint32_t Application::get_physical_device_score(VkPhysicalDevice physical_device
 		|| !has_device_extension(physical_device, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
 		return 0u;
 	}
-	return 1u;
+	auto score = 1u;
+
+	auto present_mode_count = uint32_t{};
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, m_surface, &present_mode_count, nullptr);
+	auto present_modes = std::vector<VkPresentModeKHR>{ present_mode_count };
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, m_surface, &present_mode_count, std::data(present_modes));
+	auto const mailbox_present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR present_mode) {
+		return present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
+	});
+	if (mailbox_present_mode_it != std::cend(present_modes)) {
+		score += 1u;
+	}
+
+	return score;
 }
 
 void Application::create_device() {
@@ -315,6 +332,15 @@ void Application::create_swapchain() {
 		};
 	});
 
+	auto present_mode_count = uint32_t{};
+	vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, nullptr);
+	auto present_modes = std::vector<VkPresentModeKHR>{ present_mode_count };
+	vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, std::data(present_modes));
+	auto const present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR present_mode) {
+		return present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
+	});
+	auto const present_mode = (present_mode_it != std::cend(present_modes)) ? *present_mode_it : VK_PRESENT_MODE_FIFO_KHR;
+
 	auto create_info = VkSwapchainCreateInfoKHR{};
 	create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create_info.surface = m_surface;
@@ -329,7 +355,7 @@ void Application::create_swapchain() {
 	create_info.pQueueFamilyIndices = std::data(queue_family_indices);
 	create_info.preTransform = surface_capabilities.currentTransform;
 	create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+	create_info.presentMode = present_mode;
 	create_info.clipped = VK_TRUE;
 	create_info.oldSwapchain = VK_NULL_HANDLE;
 

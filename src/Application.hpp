@@ -47,6 +47,8 @@ private:
 	void create_framebuffers();
 
 	void create_command_pool();
+	void create_vertex_buffer();
+	uint32_t find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags property_flags) const;
 	void create_command_buffers();
 
 	void create_sync_objects();
@@ -82,6 +84,8 @@ private:
 	VkPipeline m_graphics_pipeline;
 
 	VkCommandPool m_command_pool;
+	VkBuffer m_vertex_buffer;
+	VkDeviceMemory m_vertex_buffer_memory;
 	std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
 	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;
 	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_render_finished_semaphores;

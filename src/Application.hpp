@@ -47,8 +47,15 @@ private:
 	void create_framebuffers();
 
 	void create_command_pool();
+
 	void create_vertex_buffer();
+
+	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const;
 	uint32_t find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags property_flags) const;
+
+	void copy_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const;
+
 	void create_command_buffers();
 
 	void create_sync_objects();

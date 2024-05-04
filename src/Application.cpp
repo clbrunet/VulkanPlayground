@@ -84,7 +84,9 @@ void Application::run() {
 		draw_frame();
 		glfwPollEvents();
 	}
-	vkDeviceWaitIdle(m_device);
+	if (vkDeviceWaitIdle(m_device) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkDeviceWaitIdle" };
+	}
 }
 
 void Application::set_has_window_been_resized() {
@@ -105,6 +107,12 @@ void Application::init_window() {
 	glfwSetWindowUserPointer(m_window, this);
 	glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* const window, [[maybe_unused]] int const width, [[maybe_unused]] int const height) noexcept {
 		reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))->set_has_window_been_resized();
+	});
+
+	glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key, int const scancode, int const action, int const mods) {
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+			glfwSetWindowShouldClose(window, true);
+		}
 	});
 }
 
@@ -226,7 +234,7 @@ uint32_t Application::get_physical_device_score(VkPhysicalDevice physical_device
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, m_surface, &present_mode_count, nullptr);
 	auto present_modes = std::vector<VkPresentModeKHR>{ present_mode_count };
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, m_surface, &present_mode_count, std::data(present_modes));
-	auto const mailbox_present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR present_mode) {
+	auto const mailbox_present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR const present_mode) {
 		return present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
 	});
 	if (mailbox_present_mode_it != std::cend(present_modes)) {
@@ -336,7 +344,7 @@ void Application::create_swapchain() {
 	vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_surface, &surface_format_count, nullptr);
 	auto surface_formats = std::vector<VkSurfaceFormatKHR>{ surface_format_count };
 	vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_surface, &surface_format_count, std::data(surface_formats));
-	auto surface_format_it = std::find_if(std::cbegin(surface_formats), std::cend(surface_formats), [](VkSurfaceFormatKHR surface_format) {
+	auto surface_format_it = std::find_if(std::cbegin(surface_formats), std::cend(surface_formats), [](VkSurfaceFormatKHR const surface_format) {
 		return surface_format.format == VK_FORMAT_B8G8R8A8_SRGB && surface_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	});
 	if (surface_format_it == std::cend(surface_formats)) {
@@ -376,7 +384,7 @@ void Application::create_swapchain() {
 	vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, nullptr);
 	auto present_modes = std::vector<VkPresentModeKHR>{ present_mode_count };
 	vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, std::data(present_modes));
-	auto const present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR present_mode) {
+	auto const present_mode_it = std::find_if(std::cbegin(present_modes), std::cend(present_modes), [](VkPresentModeKHR const present_mode) {
 		return present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
 	});
 	auto const present_mode = (present_mode_it != std::cend(present_modes)) ? *present_mode_it : VK_PRESENT_MODE_FIFO_KHR;
@@ -655,38 +663,55 @@ void Application::create_command_pool() {
 }
 
 void Application::create_vertex_buffer() {
+	auto const buffer_size = std::size(vertices) * sizeof(vertices[0]);
+
+	auto staging_buffer = VkBuffer{};
+	auto staging_buffer_memory = VkDeviceMemory{};
+	create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+
+	void* data;
+	vkMapMemory(m_device, staging_buffer_memory, 0u, buffer_size, 0, &data);
+	memcpy(data, std::data(vertices), buffer_size);
+	vkUnmapMemory(m_device, staging_buffer_memory);
+
+	create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertex_buffer, m_vertex_buffer_memory);
+
+	copy_buffer(staging_buffer, m_vertex_buffer, buffer_size);
+
+	vkDestroyBuffer(m_device, staging_buffer, nullptr);
+	vkFreeMemory(m_device, staging_buffer_memory, nullptr);
+}
+
+void Application::create_buffer(VkDeviceSize const size, VkBufferUsageFlags const usage,
+	VkMemoryPropertyFlags const memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const {
 	auto create_info = VkBufferCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	create_info.size = std::size(vertices) * sizeof(vertices[0]);
-	create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	create_info.size = size;
+	create_info.usage = usage;
 	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateBuffer(m_device, &create_info, nullptr, &m_vertex_buffer) != VK_SUCCESS) {
+	if (vkCreateBuffer(m_device, &create_info, nullptr, &buffer) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateBuffer" };
 	}
 
 	auto memory_requirements = VkMemoryRequirements{};
-	vkGetBufferMemoryRequirements(m_device, m_vertex_buffer, &memory_requirements);
+	vkGetBufferMemoryRequirements(m_device, buffer, &memory_requirements);
 
 	auto memory_allocate_info = VkMemoryAllocateInfo{};
 	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memory_allocate_info.allocationSize = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags);
 
-	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &m_vertex_buffer_memory) != VK_SUCCESS) {
+	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkAllocateMemory" };
 	}
 
-	vkBindBufferMemory(m_device, m_vertex_buffer, m_vertex_buffer_memory, 0u);
-
-	void* data;
-	vkMapMemory(m_device, m_vertex_buffer_memory, 0u, create_info.size, 0, &data);
-	memcpy(data, std::data(vertices), create_info.size);
-	vkUnmapMemory(m_device, m_vertex_buffer_memory);
+	vkBindBufferMemory(m_device, buffer, buffer_memory, 0u);
 }
 
-uint32_t Application::find_memory_type(uint32_t const type_bits, VkMemoryPropertyFlags property_flags) const {
+uint32_t Application::find_memory_type(uint32_t const type_bits, VkMemoryPropertyFlags const property_flags) const {
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
 
@@ -702,6 +727,50 @@ uint32_t Application::find_memory_type(uint32_t const type_bits, VkMemoryPropert
 	auto const message = std::format("physical device lacks memory type with bits: {:#b} and VkMemoryPropertyFlags: {:#b}",
 		type_bits, property_flags);
 	throw std::runtime_error{ message };
+}
+
+void Application::copy_buffer(VkBuffer const src, VkBuffer const dst, VkDeviceSize size) const {
+	auto command_buffer_allocate_info = VkCommandBufferAllocateInfo{};
+	command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command_buffer_allocate_info.commandPool = m_command_pool;
+	command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command_buffer_allocate_info.commandBufferCount = 1u;
+
+	auto command_buffer = VkCommandBuffer{};
+	if (vkAllocateCommandBuffers(m_device, &command_buffer_allocate_info, &command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkAllocateCommandBuffers" };
+	}
+
+	auto command_buffer_begin_info = VkCommandBufferBeginInfo{};
+	command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	if (vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkBeginCommandBuffer" };
+	}
+
+	auto copy_region = VkBufferCopy{};
+	copy_region.size = size;
+	vkCmdCopyBuffer(command_buffer, src, dst, 1u, &copy_region);
+
+
+	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkEndCommandBuffer" };
+	}
+
+	auto submit_info = VkSubmitInfo{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1u;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	if (vkQueueSubmit(m_graphics_queue, 1u, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkQueueSubmit" };
+	}
+	if (vkQueueWaitIdle(m_graphics_queue) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkQueueWaitIdle" };
+	}
+
+	vkFreeCommandBuffers(m_device, m_command_pool, 1u, &command_buffer);
 }
 
 void Application::create_command_buffers() {
@@ -854,7 +923,9 @@ void Application::recreate_swapchain() {
 		glfwGetFramebufferSize(m_window, &width, &height);
 	}
 
-	vkDeviceWaitIdle(m_device);
+	if (vkDeviceWaitIdle(m_device) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkDeviceWaitIdle" };
+	}
 
 	clean_swapchain();
 

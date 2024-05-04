@@ -49,6 +49,7 @@ private:
 	void create_command_pool();
 
 	void create_vertex_buffer();
+	void create_index_buffer();
 
 	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
 		VkMemoryPropertyFlags memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const;
@@ -67,7 +68,7 @@ private:
 	void clean_swapchain();
 
 private:
-	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
+	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
 
 	GLFWwindow* m_window;
 	bool m_has_window_been_resized = false;
@@ -93,6 +94,8 @@ private:
 	VkCommandPool m_command_pool;
 	VkBuffer m_vertex_buffer;
 	VkDeviceMemory m_vertex_buffer_memory;
+	VkBuffer m_index_buffer;
+	VkDeviceMemory m_index_buffer_memory;
 	std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
 	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;
 	std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_render_finished_semaphores;

@@ -14,14 +14,14 @@
 #include <format>
 
 #ifndef NDEBUG
-auto constexpr VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
+constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 #endif
 
 struct Vertex {
 	glm::vec2 position;
 	glm::vec3 color;
 
-	static constexpr VkVertexInputBindingDescription binding_description() {
+	constexpr static VkVertexInputBindingDescription binding_description() {
 		auto binding_description = VkVertexInputBindingDescription{};
 		binding_description.binding = 0u;
 		binding_description.stride = sizeof(Vertex);
@@ -29,7 +29,7 @@ struct Vertex {
 		return binding_description;
 	}
 
-	static constexpr std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
+	constexpr static std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
 		auto attribute_descriptions = std::array<VkVertexInputAttributeDescription, 2>{};
 		attribute_descriptions[0].location = 0u;
 		attribute_descriptions[0].binding = 0u;
@@ -44,11 +44,14 @@ struct Vertex {
 	}
 };
 
-auto constexpr vertices = std::array<Vertex, 3>{{
-	Vertex{ .position = glm::vec2{ 0.f, -0.5f }, .color = glm::vec3{ 1.f, 0.f, 0.f } },
+constexpr auto VERTICES = std::array<Vertex, 4>{{
+	Vertex{ .position = glm::vec2{ -0.5f, -0.5f }, .color = glm::vec3{ 1.f, 1.f, 1.f } },
+	Vertex{ .position = glm::vec2{ 0.5f, -0.5f }, .color = glm::vec3{ 0.f, 1.f, 0.f } },
 	Vertex{ .position = glm::vec2{ 0.5f, 0.5f }, .color = glm::vec3{ 0.f, 1.f, 0.f } },
-	Vertex{ .position = glm::vec2{ -0.5f, 0.5f }, .color = glm::vec3{ 0.f, 0.f, 1.f } },
+	Vertex{ .position = glm::vec2{ -0.5f, 0.5f }, .color = glm::vec3{ 1.f, 1.f, 1.f } },
 }};
+
+constexpr auto INDICES = std::array<uint16_t, 6>{{ 0, 1, 2, 2, 3, 0 }};
 
 Application::Application() {
 	init_window();
@@ -65,6 +68,8 @@ Application::~Application() {
 	for (auto const image_available_semaphore : m_image_available_semaphores) {
 		vkDestroySemaphore(m_device, image_available_semaphore, nullptr);
 	}
+	vkDestroyBuffer(m_device, m_index_buffer, nullptr);
+	vkFreeMemory(m_device, m_index_buffer_memory, nullptr);
 	vkDestroyBuffer(m_device, m_vertex_buffer, nullptr);
 	vkFreeMemory(m_device, m_vertex_buffer_memory, nullptr);
 	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
@@ -97,19 +102,21 @@ void Application::init_window() {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	auto constexpr WIDTH = 1280u;
-	auto constexpr HEIGHT = 720u;
+	constexpr auto WIDTH = 1280u;
+	constexpr auto HEIGHT = 720u;
 	m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Playground", nullptr, nullptr);
 	if (!m_window) {
 		throw std::runtime_error{ "glfwCreateWindow" };
 	}
 
 	glfwSetWindowUserPointer(m_window, this);
-	glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* const window, [[maybe_unused]] int const width, [[maybe_unused]] int const height) noexcept {
+	glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* const window,
+		[[maybe_unused]] int const width, [[maybe_unused]] int const height) noexcept {
 		reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))->set_has_window_been_resized();
 	});
 
-	glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key, int const scancode, int const action, int const mods) {
+	glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key,
+		[[maybe_unused]] int const scancode, int const action, [[maybe_unused]] int const mods) noexcept {
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, true);
 		}
@@ -128,6 +135,7 @@ void Application::init_vulkan() {
 	create_framebuffers();
 	create_command_pool();
 	create_vertex_buffer();
+	create_index_buffer();
 	create_command_buffers();
 	create_sync_objects();
 }
@@ -663,7 +671,7 @@ void Application::create_command_pool() {
 }
 
 void Application::create_vertex_buffer() {
-	auto const buffer_size = std::size(vertices) * sizeof(vertices[0]);
+	auto const buffer_size = std::size(VERTICES) * sizeof(VERTICES[0]);
 
 	auto staging_buffer = VkBuffer{};
 	auto staging_buffer_memory = VkDeviceMemory{};
@@ -672,13 +680,35 @@ void Application::create_vertex_buffer() {
 
 	void* data;
 	vkMapMemory(m_device, staging_buffer_memory, 0u, buffer_size, 0, &data);
-	memcpy(data, std::data(vertices), buffer_size);
+	memcpy(data, std::data(VERTICES), buffer_size);
 	vkUnmapMemory(m_device, staging_buffer_memory);
 
 	create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertex_buffer, m_vertex_buffer_memory);
 
 	copy_buffer(staging_buffer, m_vertex_buffer, buffer_size);
+
+	vkDestroyBuffer(m_device, staging_buffer, nullptr);
+	vkFreeMemory(m_device, staging_buffer_memory, nullptr);
+}
+
+void Application::create_index_buffer() {
+	auto const buffer_size = std::size(INDICES) * sizeof(INDICES[0]);
+
+	auto staging_buffer = VkBuffer{};
+	auto staging_buffer_memory = VkDeviceMemory{};
+	create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+
+	void* data;
+	vkMapMemory(m_device, staging_buffer_memory, 0u, buffer_size, 0, &data);
+	memcpy(data, std::data(INDICES), buffer_size);
+	vkUnmapMemory(m_device, staging_buffer_memory);
+
+	create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_index_buffer, m_index_buffer_memory);
+
+	copy_buffer(staging_buffer, m_index_buffer, buffer_size);
 
 	vkDestroyBuffer(m_device, staging_buffer, nullptr);
 	vkFreeMemory(m_device, staging_buffer_memory, nullptr);
@@ -905,7 +935,8 @@ void Application::record_command_buffer(VkCommandBuffer const command_buffer, ui
 
 	auto offset = VkDeviceSize{ 0u };
 	vkCmdBindVertexBuffers(command_buffer, 0u, 1u, &m_vertex_buffer, &offset);
-	vkCmdDraw(command_buffer, static_cast<uint32_t>(std::size(vertices)), 1u, 0u, 0u);
+	vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0u, VK_INDEX_TYPE_UINT16);
+	vkCmdDrawIndexed(command_buffer, static_cast<uint32_t>(std::size(INDICES)), 1u, 0u, 0u, 0u);
 
 	vkCmdEndRenderPass(command_buffer);
 

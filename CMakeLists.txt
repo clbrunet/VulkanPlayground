@@ -28,6 +28,7 @@ if(MSVC)
     /wd4710 # 'function' : function not inlined
     /wd4711 # function 'function' selected for inline expansion
     /wd4820 # 'bytes' bytes padding added after construct 'member_name'
+    /wd5045 # Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
     /external:anglebrackets
     /external:W0
     /analyze:external-

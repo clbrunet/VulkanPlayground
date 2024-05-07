@@ -10,11 +10,13 @@ find_package(Vulkan REQUIRED COMPONENTS glslc)
 set(GLFW_BUILD_EXAMPLES Off)
 set(GLFW_BUILD_TESTS Off)
 set(GLFW_BUILD_DOCS Off)
-add_subdirectory(./ext/glfw SYSTEM)
+add_subdirectory(ext/glfw SYSTEM)
 
-add_subdirectory(./ext/glm SYSTEM)
+add_subdirectory(ext/glm SYSTEM)
 
-set(SHADERS_DIRECTORY ${CMAKE_SOURCE_DIR}/assets/shaders)
+add_subdirectory(ext/stb SYSTEM)
+
+set(SHADERS_DIRECTORY ${CMAKE_SOURCE_DIR}/shaders)
 set(SPIRV_SHADERS_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
 
 file(GLOB_RECURSE SRCS src/*.cpp)
@@ -55,8 +57,9 @@ target_compile_options(VulkanPlayground PRIVATE ${VULKAN_PLAYGROUND_FLAGS})
 target_include_directories(VulkanPlayground PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(VulkanPlayground PRIVATE
   glfw
-  glm
   Vulkan::Vulkan
+  glm
+  stb
 )
 
 set_target_properties(VulkanPlayground PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

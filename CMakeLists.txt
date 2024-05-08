@@ -52,6 +52,7 @@ target_compile_definitions(VulkanPlayground PRIVATE
   GLFW_INCLUDE_VULKAN
   GLM_FORCE_DEPTH_ZERO_TO_ONE
   SPIRV_SHADERS_DIRECTORY=\"${SPIRV_SHADERS_DIRECTORY}\"
+  ASSETS_DIRECTORY=\"${CMAKE_SOURCE_DIR}/assets\"
 )
 target_compile_options(VulkanPlayground PRIVATE ${VULKAN_PLAYGROUND_FLAGS})
 target_include_directories(VulkanPlayground PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

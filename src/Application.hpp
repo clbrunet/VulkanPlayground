@@ -54,61 +54,10 @@ private:
 	void create_index_buffer();
 
 	void create_texture_image();
+	void create_texture_image_view();
+	void create_texture_sampler();
 
 	void create_uniform_buffers();
-
-	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
-		VkMemoryPropertyFlags memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const;
-	void copy_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const;
-
-	void create_image(VkFormat format, uint32_t width, uint32_t height, VkImageTiling tiling, VkImageUsageFlags usage,
-		VkMemoryPropertyFlags memory_property_flags, VkImage& image, VkDeviceMemory& image_memory);
-	void transition_image_layout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout);
-	void copy_buffer_to_image(VkBuffer src, VkImage dst, uint32_t width, uint32_t height) const;
-
-	uint32_t find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags property_flags) const;
-
-	template<typename Function>
-	void one_time_command(Function function) const {
-		auto command_buffer_allocate_info = VkCommandBufferAllocateInfo{};
-		command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		command_buffer_allocate_info.commandPool = m_command_pool;
-		command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		command_buffer_allocate_info.commandBufferCount = 1u;
-
-		auto command_buffer = VkCommandBuffer{};
-		if (vkAllocateCommandBuffers(m_device, &command_buffer_allocate_info, &command_buffer) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkAllocateCommandBuffers" };
-		}
-
-		auto command_buffer_begin_info = VkCommandBufferBeginInfo{};
-		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-		if (vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkBeginCommandBuffer" };
-		}
-
-		function(command_buffer);
-
-		if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkEndCommandBuffer" };
-		}
-
-		auto submit_info = VkSubmitInfo{};
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit_info.commandBufferCount = 1u;
-		submit_info.pCommandBuffers = &command_buffer;
-
-		if (vkQueueSubmit(m_graphics_queue, 1u, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkQueueSubmit" };
-		}
-		if (vkQueueWaitIdle(m_graphics_queue) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkQueueWaitIdle" };
-		}
-
-		vkFreeCommandBuffers(m_device, m_command_pool, 1u, &command_buffer);
-	}
 
 	void create_descriptor_pool();
 	void create_descriptor_sets();
@@ -123,6 +72,22 @@ private:
 
 	void recreate_swapchain();
 	void clean_swapchain();
+
+	void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const;
+	void copy_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const;
+
+	void create_image(VkFormat format, uint32_t width, uint32_t height, VkImageTiling tiling, VkImageUsageFlags usage,
+		VkMemoryPropertyFlags memory_property_flags, VkImage& image, VkDeviceMemory& image_memory);
+	void transition_image_layout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout);
+	void copy_buffer_to_image(VkBuffer src, VkImage dst, uint32_t width, uint32_t height) const;
+
+	VkImageView create_image_view(VkImage image, VkFormat format);
+
+	uint32_t find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags property_flags) const;
+
+	template<typename Function>
+	void one_time_command(Function function) const;
 
 private:
 	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -158,6 +123,8 @@ private:
 
 	VkImage m_texture_image;
 	VkDeviceMemory m_texture_image_memory;
+	VkImageView m_texture_image_view;
+	VkSampler m_texture_sampler;
 
 	std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_mvp_uniform_buffers;
 	std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_mvp_uniform_buffer_memories;

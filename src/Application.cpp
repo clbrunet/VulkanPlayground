@@ -98,6 +98,8 @@ Application::~Application() {
 	vkDestroyBuffer(m_device, m_vertex_buffer, nullptr);
 	vkFreeMemory(m_device, m_vertex_buffer_memory, nullptr);
 
+	vkDestroyImageView(m_device, m_texture_image_view, nullptr);
+	vkDestroySampler(m_device, m_texture_sampler, nullptr);
 	vkDestroyImage(m_device, m_texture_image, nullptr);
 	vkFreeMemory(m_device, m_texture_image_memory, nullptr);
 
@@ -176,6 +178,8 @@ void Application::init_vulkan() {
 	create_index_buffer();
 
 	create_texture_image();
+	create_texture_image_view();
+	create_texture_sampler();
 
 	create_uniform_buffers();
 	create_descriptor_pool();
@@ -477,26 +481,7 @@ void Application::create_swapchain() {
 void Application::create_image_views() {
 	std::transform(std::cbegin(m_swapchain_images), std::cend(m_swapchain_images),
 		std::back_inserter(m_image_views), [&](VkImage const swapchain_image) {
-		auto create_info = VkImageViewCreateInfo{};
-		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		create_info.image = swapchain_image;
-		create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		create_info.format = m_swapchain_format;
-		create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		create_info.subresourceRange.baseMipLevel = 0u;
-		create_info.subresourceRange.levelCount = 1u;
-		create_info.subresourceRange.baseArrayLayer = 0u;
-		create_info.subresourceRange.layerCount = 1u;
-
-		auto image_view = VkImageView{};
-		if (vkCreateImageView(m_device, &create_info, nullptr, &image_view) != VK_SUCCESS) {
-			throw std::runtime_error{ "vkCreateImageView" };
-		}
-		return image_view;
+		return create_image_view(swapchain_image, m_swapchain_format);
 	});
 }
 
@@ -810,6 +795,34 @@ void Application::create_texture_image() {
 	vkFreeMemory(m_device, staging_buffer_memory, nullptr);
 }
 
+void Application::create_texture_image_view() {
+	m_texture_image_view = create_image_view(m_texture_image, VK_FORMAT_R8G8B8A8_SRGB);
+}
+
+void Application::create_texture_sampler() {
+	auto create_info = VkSamplerCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	create_info.flags;
+	create_info.magFilter = VK_FILTER_LINEAR;
+	create_info.minFilter = VK_FILTER_LINEAR;
+	create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	create_info.mipLodBias = 0.f;
+	create_info.anisotropyEnable = VK_FALSE;
+	create_info.maxAnisotropy = 1.f;
+	create_info.compareEnable = VK_FALSE;
+	create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+	create_info.minLod = 0.f;
+	create_info.maxLod = 0.f;
+	create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	create_info.unnormalizedCoordinates = VK_FALSE;
+
+	if (vkCreateSampler(m_device, &create_info, nullptr, &m_texture_sampler) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateSampler" };
+	}
+}
+
 void Application::create_uniform_buffers() {
 	auto const buffer_size = sizeof(MvpUniformBufferObject);
 	for (auto i = 0u; i < std::size(m_mvp_uniform_buffers); ++i) {
@@ -818,147 +831,6 @@ void Application::create_uniform_buffers() {
 			m_mvp_uniform_buffers[i], m_mvp_uniform_buffer_memories[i]);
 		vkMapMemory(m_device, m_mvp_uniform_buffer_memories[i], 0u, buffer_size, 0, &m_mvp_uniform_buffer_maps[i]);
 	}
-}
-
-void Application::create_buffer(VkDeviceSize const size, VkBufferUsageFlags const usage,
-	VkMemoryPropertyFlags const memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const {
-	auto create_info = VkBufferCreateInfo{};
-	create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	create_info.size = size;
-	create_info.usage = usage;
-	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	if (vkCreateBuffer(m_device, &create_info, nullptr, &buffer) != VK_SUCCESS) {
-		throw std::runtime_error{ "vkCreateBuffer" };
-	}
-
-	auto memory_requirements = VkMemoryRequirements{};
-	vkGetBufferMemoryRequirements(m_device, buffer, &memory_requirements);
-
-	auto memory_allocate_info = VkMemoryAllocateInfo{};
-	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memory_allocate_info.allocationSize = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags);
-
-	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
-		throw std::runtime_error{ "vkAllocateMemory" };
-	}
-
-	vkBindBufferMemory(m_device, buffer, buffer_memory, 0u);
-}
-
-void Application::copy_buffer(VkBuffer const src, VkBuffer const dst, VkDeviceSize size) const {
-	one_time_command([=](VkCommandBuffer const command_buffer) {
-		auto copy_region = VkBufferCopy{};
-		copy_region.size = size;
-		vkCmdCopyBuffer(command_buffer, src, dst, 1u, &copy_region);
-	});
-}
-
-void Application::create_image(VkFormat const format, uint32_t const width, uint32_t const height,
-	VkImageTiling const tiling, VkImageUsageFlags const usage, VkMemoryPropertyFlags const memory_property_flags,
-	VkImage& image, VkDeviceMemory& image_memory) {
-	auto create_info = VkImageCreateInfo{};
-	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	create_info.imageType = VK_IMAGE_TYPE_2D;
-	create_info.format = format;
-	create_info.extent = VkExtent3D{ width, height, 1u };
-	create_info.mipLevels = 1u;
-	create_info.arrayLayers = 1u;
-	create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-	create_info.tiling = tiling;
-	create_info.usage = usage;
-	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	if (vkCreateImage(m_device, &create_info, nullptr, &image) != VK_SUCCESS) {
-		throw std::runtime_error{ "vkCreateImage" };
-	}
-
-	auto memory_requirements = VkMemoryRequirements{};
-	vkGetImageMemoryRequirements(m_device, image, &memory_requirements);
-
-	auto memory_allocate_info = VkMemoryAllocateInfo{};
-	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memory_allocate_info.allocationSize = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags);
-
-	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &image_memory) != VK_SUCCESS) {
-		throw std::runtime_error{ "vkAllocateMemory" };
-	}
-
-	vkBindImageMemory(m_device, image, image_memory, 0u);
-}
-
-void Application::transition_image_layout(VkImage const image,
-	VkImageLayout const old_layout, VkImageLayout const new_layout) {
-	one_time_command([=](VkCommandBuffer const command_buffer) {
-		auto memory_barrier = VkImageMemoryBarrier{};
-		memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		memory_barrier.oldLayout = old_layout;
-		memory_barrier.newLayout = new_layout;
-		memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		memory_barrier.image = image;
-		memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		memory_barrier.subresourceRange.baseMipLevel = 0u;
-		memory_barrier.subresourceRange.levelCount = 1u;
-		memory_barrier.subresourceRange.baseArrayLayer = 0u;
-		memory_barrier.subresourceRange.layerCount = 1u;
-
-		auto src_stage = VkPipelineStageFlags{};
-		auto dst_stage = VkPipelineStageFlags{};
-		if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			memory_barrier.srcAccessMask = 0;
-			memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		} else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-			memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		} else {
-			assert(false && "unsupported image layout transition");
-		}
-
-		vkCmdPipelineBarrier(command_buffer, src_stage, dst_stage, 0, 0u, nullptr, 0u, nullptr, 1u, &memory_barrier);
-	});
-}
-
-void Application::copy_buffer_to_image(VkBuffer const src, VkImage const dst, uint32_t const width, uint32_t const height) const {
-	one_time_command([=](VkCommandBuffer const command_buffer) {
-		auto copy_region = VkBufferImageCopy{};
-		copy_region.bufferOffset = 0u;
-		copy_region.bufferRowLength = 0u;
-		copy_region.bufferImageHeight = 0u;
-		copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.imageSubresource.mipLevel = 0u;
-		copy_region.imageSubresource.baseArrayLayer = 0u;
-		copy_region.imageSubresource.layerCount = 1u;
-		copy_region.imageOffset = VkOffset3D{ 0u, 0u, 0u };
-		copy_region.imageExtent = VkExtent3D{ width, height, 1u };
-
-		vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy_region);
-	});
-}
-
-uint32_t Application::find_memory_type(uint32_t const type_bits, VkMemoryPropertyFlags const property_flags) const {
-	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
-	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
-
-	auto i = 0u;
-	auto const memory_types = std::span{ memory_properties.memoryTypes, memory_properties.memoryTypeCount };
-	for (auto const memory_type : memory_types) {
-		if ((type_bits & (1 << i)) != 0 && (memory_type.propertyFlags & property_flags) == property_flags) {
-			return i;
-		}
-		i += 1u;
-	}
-
-	auto const message = std::format(
-		"physical device lacks memory type with bits: {:#b} and VkMemoryPropertyFlags: {:#b}",
-		type_bits, property_flags);
-	throw std::runtime_error{ message };
 }
 
 void Application::create_descriptor_pool() {
@@ -1205,4 +1077,211 @@ void Application::clean_swapchain() {
 	m_image_views.clear();
 	m_swapchain_images.clear();
 	vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+}
+
+void Application::create_buffer(VkDeviceSize const size, VkBufferUsageFlags const usage,
+	VkMemoryPropertyFlags const memory_property_flags, VkBuffer& buffer, VkDeviceMemory& buffer_memory) const {
+	auto create_info = VkBufferCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	create_info.size = size;
+	create_info.usage = usage;
+	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(m_device, &create_info, nullptr, &buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateBuffer" };
+	}
+
+	auto memory_requirements = VkMemoryRequirements{};
+	vkGetBufferMemoryRequirements(m_device, buffer, &memory_requirements);
+
+	auto memory_allocate_info = VkMemoryAllocateInfo{};
+	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memory_allocate_info.allocationSize = memory_requirements.size;
+	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags);
+
+	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkAllocateMemory" };
+	}
+
+	vkBindBufferMemory(m_device, buffer, buffer_memory, 0u);
+}
+
+void Application::copy_buffer(VkBuffer const src, VkBuffer const dst, VkDeviceSize size) const {
+	one_time_command([=](VkCommandBuffer const command_buffer) {
+		auto copy_region = VkBufferCopy{};
+		copy_region.size = size;
+		vkCmdCopyBuffer(command_buffer, src, dst, 1u, &copy_region);
+	});
+}
+
+void Application::create_image(VkFormat const format, uint32_t const width, uint32_t const height,
+	VkImageTiling const tiling, VkImageUsageFlags const usage, VkMemoryPropertyFlags const memory_property_flags,
+	VkImage& image, VkDeviceMemory& image_memory) {
+	auto create_info = VkImageCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	create_info.imageType = VK_IMAGE_TYPE_2D;
+	create_info.format = format;
+	create_info.extent = VkExtent3D{ width, height, 1u };
+	create_info.mipLevels = 1u;
+	create_info.arrayLayers = 1u;
+	create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	create_info.tiling = tiling;
+	create_info.usage = usage;
+	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateImage(m_device, &create_info, nullptr, &image) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateImage" };
+	}
+
+	auto memory_requirements = VkMemoryRequirements{};
+	vkGetImageMemoryRequirements(m_device, image, &memory_requirements);
+
+	auto memory_allocate_info = VkMemoryAllocateInfo{};
+	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memory_allocate_info.allocationSize = memory_requirements.size;
+	memory_allocate_info.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags);
+
+	if (vkAllocateMemory(m_device, &memory_allocate_info, nullptr, &image_memory) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkAllocateMemory" };
+	}
+
+	vkBindImageMemory(m_device, image, image_memory, 0u);
+}
+
+void Application::transition_image_layout(VkImage const image,
+	VkImageLayout const old_layout, VkImageLayout const new_layout) {
+	one_time_command([=](VkCommandBuffer const command_buffer) {
+		auto memory_barrier = VkImageMemoryBarrier{};
+		memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		memory_barrier.oldLayout = old_layout;
+		memory_barrier.newLayout = new_layout;
+		memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		memory_barrier.image = image;
+		memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		memory_barrier.subresourceRange.baseMipLevel = 0u;
+		memory_barrier.subresourceRange.levelCount = 1u;
+		memory_barrier.subresourceRange.baseArrayLayer = 0u;
+		memory_barrier.subresourceRange.layerCount = 1u;
+
+		auto src_stage = VkPipelineStageFlags{};
+		auto dst_stage = VkPipelineStageFlags{};
+		if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			memory_barrier.srcAccessMask = 0;
+			memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		} else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		} else {
+			assert(false && "unsupported image layout transition");
+		}
+
+		vkCmdPipelineBarrier(command_buffer, src_stage, dst_stage, 0, 0u, nullptr, 0u, nullptr, 1u, &memory_barrier);
+	});
+}
+
+void Application::copy_buffer_to_image(VkBuffer const src, VkImage const dst,
+	uint32_t const width, uint32_t const height) const {
+	one_time_command([=](VkCommandBuffer const command_buffer) {
+		auto copy_region = VkBufferImageCopy{};
+		copy_region.bufferOffset = 0u;
+		copy_region.bufferRowLength = 0u;
+		copy_region.bufferImageHeight = 0u;
+		copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.imageSubresource.mipLevel = 0u;
+		copy_region.imageSubresource.baseArrayLayer = 0u;
+		copy_region.imageSubresource.layerCount = 1u;
+		copy_region.imageOffset = VkOffset3D{ 0u, 0u, 0u };
+		copy_region.imageExtent = VkExtent3D{ width, height, 1u };
+
+		vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy_region);
+	});
+}
+
+VkImageView Application::create_image_view(VkImage const image, VkFormat const format) {
+	auto create_info = VkImageViewCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	create_info.image = image;
+	create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	create_info.format = format;
+	create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	create_info.subresourceRange.baseMipLevel = 0u;
+	create_info.subresourceRange.levelCount = 1u;
+	create_info.subresourceRange.baseArrayLayer = 0u;
+	create_info.subresourceRange.layerCount = 1u;
+
+	auto image_view = VkImageView{};
+	if (vkCreateImageView(m_device, &create_info, nullptr, &image_view) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkCreateImageView" };
+	}
+	return image_view;
+}
+
+uint32_t Application::find_memory_type(uint32_t const type_bits, VkMemoryPropertyFlags const property_flags) const {
+	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
+	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
+
+	auto i = 0u;
+	auto const memory_types = std::span{ memory_properties.memoryTypes, memory_properties.memoryTypeCount };
+	for (auto const memory_type : memory_types) {
+		if ((type_bits & (1 << i)) != 0 && (memory_type.propertyFlags & property_flags) == property_flags) {
+			return i;
+		}
+		i += 1u;
+	}
+
+	auto const message = std::format(
+		"physical device lacks memory type with bits: {:#b} and VkMemoryPropertyFlags: {:#b}",
+		type_bits, property_flags);
+	throw std::runtime_error{ message };
+}
+
+template<typename Function>
+void Application::one_time_command(Function function) const {
+	auto command_buffer_allocate_info = VkCommandBufferAllocateInfo{};
+	command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command_buffer_allocate_info.commandPool = m_command_pool;
+	command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command_buffer_allocate_info.commandBufferCount = 1u;
+
+	auto command_buffer = VkCommandBuffer{};
+	if (vkAllocateCommandBuffers(m_device, &command_buffer_allocate_info, &command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkAllocateCommandBuffers" };
+	}
+
+	auto command_buffer_begin_info = VkCommandBufferBeginInfo{};
+	command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	if (vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkBeginCommandBuffer" };
+	}
+
+	function(command_buffer);
+
+	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkEndCommandBuffer" };
+	}
+
+	auto submit_info = VkSubmitInfo{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1u;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	if (vkQueueSubmit(m_graphics_queue, 1u, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkQueueSubmit" };
+	}
+	if (vkQueueWaitIdle(m_graphics_queue) != VK_SUCCESS) {
+		throw std::runtime_error{ "vkQueueWaitIdle" };
+	}
+
+	vkFreeCommandBuffers(m_device, m_command_pool, 1u, &command_buffer);
 }

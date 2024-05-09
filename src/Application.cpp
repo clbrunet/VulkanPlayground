@@ -27,6 +27,7 @@ struct MvpUniformBufferObject {
 
 struct Vertex {
 	glm::vec3 position;
+	glm::vec2 texture_coords;
 	glm::vec3 color;
 
 	constexpr static VkVertexInputBindingDescription binding_description() {
@@ -37,8 +38,8 @@ struct Vertex {
 		return binding_description;
 	}
 
-	constexpr static std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
-		auto attribute_descriptions = std::array<VkVertexInputAttributeDescription, 2>{};
+	constexpr static std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions() {
+		auto attribute_descriptions = std::array<VkVertexInputAttributeDescription, 3>{};
 		attribute_descriptions[0].location = 0u;
 		attribute_descriptions[0].binding = 0u;
 		attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -46,17 +47,26 @@ struct Vertex {
 
 		attribute_descriptions[1].location = 1u;
 		attribute_descriptions[1].binding = 0u;
-		attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attribute_descriptions[1].offset = offsetof(Vertex, color);
+		attribute_descriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+		attribute_descriptions[1].offset = offsetof(Vertex, texture_coords);
+
+		attribute_descriptions[2].location = 2u;
+		attribute_descriptions[2].binding = 0u;
+		attribute_descriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attribute_descriptions[2].offset = offsetof(Vertex, color);
 		return attribute_descriptions;
 	}
 };
 
 constexpr auto VERTICES = std::array<Vertex, 4>{{
-	Vertex{ .position = glm::vec3{ -0.5f, -0.5f, 0.f }, .color = glm::vec3{ 1.f, 1.f, 1.f } },
-	Vertex{ .position = glm::vec3{ 0.5f, -0.5f, 0.f }, .color = glm::vec3{ 0.f, 1.f, 0.f } },
-	Vertex{ .position = glm::vec3{ 0.5f, 0.5f, 0.f }, .color = glm::vec3{ 0.f, 1.f, 0.f } },
-	Vertex{ .position = glm::vec3{ -0.5f, 0.5f, 0.f }, .color = glm::vec3{ 1.f, 1.f, 1.f } },
+	Vertex{ .position = glm::vec3{ -0.5f, -0.5f, 0.f }, .texture_coords = glm::vec2{ 0.f, 1.f },
+		.color = glm::vec3{ 1.f, 0.f, 0.f } },
+	Vertex{ .position = glm::vec3{ 0.5f, -0.5f, 0.f }, .texture_coords = glm::vec2{ 1.f, 1.f },
+		.color = glm::vec3{ 0.f, 1.f, 0.f } },
+	Vertex{ .position = glm::vec3{ 0.5f, 0.5f, 0.f }, .texture_coords = glm::vec2{ 1.f, 0.f },
+		.color = glm::vec3{ 0.f, 0.f, 1.f } },
+	Vertex{ .position = glm::vec3{ -0.5f, 0.5f, 0.f }, .texture_coords = glm::vec2{ 0.f, 0.f },
+		.color = glm::vec3{ 1.f, 1.f, 1.f } },
 }};
 
 constexpr auto INDICES = std::array<uint16_t, 6>{{ 0, 1, 2, 2, 3, 0 }};
@@ -182,6 +192,7 @@ void Application::init_vulkan() {
 	create_texture_sampler();
 
 	create_uniform_buffers();
+
 	create_descriptor_pool();
 	create_descriptor_sets();
 
@@ -486,16 +497,25 @@ void Application::create_image_views() {
 }
 
 void Application::create_descriptor_set_layout() {
-	auto binding = VkDescriptorSetLayoutBinding{};
-	binding.binding = 0u;
-	binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	binding.descriptorCount = 1u;
-	binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	auto bindings = std::array<VkDescriptorSetLayoutBinding, 2>{};
+	auto& mvp_uniform_buffer_binding = bindings[0];
+	mvp_uniform_buffer_binding.binding = 0u;
+	mvp_uniform_buffer_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	mvp_uniform_buffer_binding.descriptorCount = 1u;
+	mvp_uniform_buffer_binding.pImmutableSamplers = nullptr;
+	mvp_uniform_buffer_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	auto& texture_sampler_binding = bindings[1];
+	texture_sampler_binding.binding = 1u;
+	texture_sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	texture_sampler_binding.descriptorCount = 1u;
+	texture_sampler_binding.pImmutableSamplers = nullptr;
+	texture_sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 	auto create_info = VkDescriptorSetLayoutCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	create_info.bindingCount = 1u;
-	create_info.pBindings = &binding;
+	create_info.bindingCount = static_cast<uint32_t>(std::size(bindings));
+	create_info.pBindings = std::data(bindings);
 
 	if (vkCreateDescriptorSetLayout(m_device, &create_info, nullptr, &m_descriptor_set_layout) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateDescriptorSetLayout" };
@@ -545,28 +565,24 @@ void Application::create_render_pass() {
 }
 
 void Application::create_graphics_pipeline() {
-	auto const vertex_shader_module = create_shader_module("colored.vert");
-	auto const fragment_shader_module = create_shader_module("colored.frag");
+	auto const vertex_shader_module = create_shader_module("colored_textured.vert");
+	auto const fragment_shader_module = create_shader_module("colored_textured.frag");
+	auto shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2u>{};
 
-	auto vertex_shader_stage_create_info = VkPipelineShaderStageCreateInfo{};
+	auto& vertex_shader_stage_create_info = shader_stages[0];
 	vertex_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertex_shader_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
 	vertex_shader_stage_create_info.module = vertex_shader_module;
 	vertex_shader_stage_create_info.pName = "main";
 
-	auto fragment_shader_stage_create_info = VkPipelineShaderStageCreateInfo{};
+	auto& fragment_shader_stage_create_info = shader_stages[1];
 	fragment_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fragment_shader_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	fragment_shader_stage_create_info.module = fragment_shader_module;
 	fragment_shader_stage_create_info.pName = "main";
 
-	auto const shader_stages = std::array<VkPipelineShaderStageCreateInfo, 2u>{
-		vertex_shader_stage_create_info,
-		fragment_shader_stage_create_info
-	};
-
-	auto vertex_binding_description = Vertex::binding_description();
-	auto vertex_attribute_descriptions = Vertex::attribute_descriptions();
+	auto const vertex_binding_description = Vertex::binding_description();
+	auto const vertex_attribute_descriptions = Vertex::attribute_descriptions();
 	auto vertex_input_state_create_info = VkPipelineVertexInputStateCreateInfo{};
 	vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertex_input_state_create_info.vertexBindingDescriptionCount = 1u;
@@ -629,7 +645,7 @@ void Application::create_graphics_pipeline() {
 
 	auto create_info = VkGraphicsPipelineCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	create_info.stageCount = 2u;
+	create_info.stageCount = static_cast<uint32_t>(std::size(shader_stages));
 	create_info.pStages = std::data(shader_stages);
 	create_info.pVertexInputState = &vertex_input_state_create_info;
 	create_info.pInputAssemblyState = &input_assembly_state_create_info;
@@ -834,15 +850,21 @@ void Application::create_uniform_buffers() {
 }
 
 void Application::create_descriptor_pool() {
-	auto pool_size = VkDescriptorPoolSize{};
-	pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	pool_size.descriptorCount = static_cast<uint32_t>(std::size(m_descriptor_sets));
+	auto pool_sizes = std::array<VkDescriptorPoolSize, 2>{};
+
+	auto& mvp_uniform_buffer_pool_size = pool_sizes[0];
+	mvp_uniform_buffer_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	mvp_uniform_buffer_pool_size.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+
+	auto& texture_sampler_pool_size = pool_sizes[1];
+	texture_sampler_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	texture_sampler_pool_size.descriptorCount = MAX_FRAMES_IN_FLIGHT;
 
 	auto create_info = VkDescriptorPoolCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	create_info.maxSets = static_cast<uint32_t>(std::size(m_descriptor_sets));
-	create_info.poolSizeCount = 1u;
-	create_info.pPoolSizes = &pool_size;
+	create_info.maxSets = MAX_FRAMES_IN_FLIGHT;
+	create_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
+	create_info.pPoolSizes = std::data(pool_sizes);
 
 	if (vkCreateDescriptorPool(m_device, &create_info, nullptr, &m_descriptor_pool) != VK_SUCCESS) {
 		throw std::runtime_error{ "vkCreateDescriptorPool" };
@@ -852,6 +874,7 @@ void Application::create_descriptor_pool() {
 void Application::create_descriptor_sets() {
 	auto layouts = std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT>{};
 	layouts.fill(m_descriptor_set_layout);
+
 	auto allocate_info = VkDescriptorSetAllocateInfo{};
 	allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocate_info.descriptorPool = m_descriptor_pool;
@@ -864,21 +887,38 @@ void Application::create_descriptor_sets() {
 
 	auto i = 0u;
 	for (auto descriptor_set : m_descriptor_sets) {
-		auto buffer_info = VkDescriptorBufferInfo{};
-		buffer_info.buffer = m_mvp_uniform_buffers[i];
-		buffer_info.offset = 0u;
-		buffer_info.range = VK_WHOLE_SIZE;
+		auto mvp_uniform_buffer_info = VkDescriptorBufferInfo{};
+		mvp_uniform_buffer_info.buffer = m_mvp_uniform_buffers[i];
+		mvp_uniform_buffer_info.offset = 0u;
+		mvp_uniform_buffer_info.range = VK_WHOLE_SIZE;
 
-		auto descriptor_write = VkWriteDescriptorSet{};
-		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptor_write.dstSet = descriptor_set;
-		descriptor_write.dstBinding = 0u;
-		descriptor_write.dstArrayElement = 0u;
-		descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptor_write.descriptorCount = 1u;
-		descriptor_write.pBufferInfo = &buffer_info;
+		auto texture_image_info = VkDescriptorImageInfo{};
+		texture_image_info.sampler = m_texture_sampler;
+		texture_image_info.imageView = m_texture_image_view;
+		texture_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		vkUpdateDescriptorSets(m_device, 1u, &descriptor_write, 0u, nullptr);
+		auto descriptor_writes = std::array<VkWriteDescriptorSet, 2>{};
+
+		auto& mvp_uniform_buffer_descriptor_write = descriptor_writes[0];
+		mvp_uniform_buffer_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		mvp_uniform_buffer_descriptor_write.dstSet = descriptor_set;
+		mvp_uniform_buffer_descriptor_write.dstBinding = 0u;
+		mvp_uniform_buffer_descriptor_write.dstArrayElement = 0u;
+		mvp_uniform_buffer_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		mvp_uniform_buffer_descriptor_write.descriptorCount = 1u;
+		mvp_uniform_buffer_descriptor_write.pBufferInfo = &mvp_uniform_buffer_info;
+
+		auto& texture_image_descriptor_write = descriptor_writes[1];
+		texture_image_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		texture_image_descriptor_write.dstSet = descriptor_set;
+		texture_image_descriptor_write.dstBinding = 1u;
+		texture_image_descriptor_write.dstArrayElement = 0u;
+		texture_image_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		texture_image_descriptor_write.descriptorCount = 1u;
+		texture_image_descriptor_write.pImageInfo = &texture_image_info;
+
+		vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(std::size(descriptor_writes)),
+			std::data(descriptor_writes), 0u, nullptr);
 		i += 1u;
 	}
 }

@@ -213,11 +213,18 @@ void Application::create_instance() {
 	auto glfw_extension_count = uint32_t{};
 	auto const glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 	auto extensions = std::vector<char const*>{ glfw_extensions, glfw_extensions + glfw_extension_count };
-	extensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+
+	auto const has_portabibilty_enumeration_extension
+		= has_instance_extension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+	if (has_portabibilty_enumeration_extension) {
+		extensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+	}
 
 	auto create_info = VkInstanceCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	create_info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+	if (has_portabibilty_enumeration_extension) {
+		create_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+	}
 	create_info.pApplicationInfo = &application_info;
 #ifndef NDEBUG
 	if (has_instance_layer(VALIDATION_LAYER)) {
@@ -241,6 +248,17 @@ bool Application::has_instance_layer(std::string_view const layer_name) {
 
 	return std::any_of(std::cbegin(properties), std::cend(properties), [layer_name](VkLayerProperties const& property) {
 		return layer_name.compare(property.layerName) == 0;
+	});
+}
+
+bool Application::has_instance_extension(std::string_view const extension_name) {
+	auto property_count = uint32_t{};
+	vkEnumerateInstanceExtensionProperties(nullptr, &property_count, nullptr);
+	auto properties = std::vector<VkExtensionProperties>(property_count);
+	vkEnumerateInstanceExtensionProperties(nullptr, &property_count, std::data(properties));
+
+	return std::any_of(std::cbegin(properties), std::cend(properties), [=](VkExtensionProperties const& property) {
+		return extension_name.compare(property.extensionName) == 0;
 	});
 }
 

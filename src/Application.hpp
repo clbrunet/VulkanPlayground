@@ -23,6 +23,7 @@ private:
 
 	void create_instance();
 	static bool has_instance_layer(std::string_view layer_name);
+	static bool has_instance_extension(std::string_view extension_name);
 
 	void create_surface();
 
@@ -35,8 +36,8 @@ private:
 	};
 	void create_device();
 	QueueFamilyIndices get_queue_family_indices() const;
-	static bool has_device_layer(VkPhysicalDevice physical_device, std::string_view const layer_name);
-	static bool has_device_extension(VkPhysicalDevice physical_device, std::string_view const extension_name);
+	static bool has_device_layer(VkPhysicalDevice physical_device, std::string_view layer_name);
+	static bool has_device_extension(VkPhysicalDevice physical_device, std::string_view extension_name);
 
 	void create_swapchain();
 	void create_image_views();

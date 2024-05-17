@@ -7,7 +7,7 @@ int main() {
 	try {
 		auto application = Application{};
 		application.run();
-	} catch (const std::exception& e) {
+	} catch (std::exception const& e) {
 		std::cerr << "Fatal error : " << e.what() << std::endl;
 		return EXIT_FAILURE;
 	}

@@ -29,6 +29,11 @@ private:
 	static bool has_instance_layer(vk::raii::Context const& context, std::string_view layer_name);
 	static bool has_instance_extension(vk::raii::Context const& context, std::string_view extension_name);
 
+	void create_debug_messenger();
+	static vk::DebugUtilsMessengerCreateInfoEXT get_debug_messenger_create_info();
+	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+		VkDebugUtilsMessageTypeFlagsEXT message_types, VkDebugUtilsMessengerCallbackDataEXT const* callback_data, void* user_data);
+
 	void create_surface();
 
 	void select_physical_device();
@@ -101,6 +106,7 @@ private:
 	bool m_should_recreate_swapchain = false;
 	vk::raii::Context m_context;
 	vk::raii::Instance m_instance = { nullptr };
+	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = { nullptr };
 	vk::raii::SurfaceKHR m_surface = { nullptr };
 
 	vk::raii::PhysicalDevice m_physical_device = { nullptr };

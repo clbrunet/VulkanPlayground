@@ -130,6 +130,9 @@ void Application::init_window() {
 
 void Application::init_vulkan() {
 	create_instance();
+#ifndef NDEBUG
+	create_debug_messenger();
+#endif
 	create_surface();
 	select_physical_device();
 	create_device();
@@ -174,6 +177,12 @@ void Application::create_instance() {
 	auto const glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 	auto extensions = std::vector<char const*>{ glfw_extensions, glfw_extensions + glfw_extension_count };
 
+#ifndef NDEBUG
+	if (has_instance_extension(m_context, vk::EXTDebugUtilsExtensionName)) {
+		extensions.emplace_back(vk::EXTDebugUtilsExtensionName);
+	}
+#endif
+
 	auto const has_portabibilty_enumeration_extension = has_instance_extension(m_context, vk::KHRPortabilityEnumerationExtensionName);
 	if (has_portabibilty_enumeration_extension) {
 		extensions.emplace_back(vk::KHRPortabilityEnumerationExtensionName);
@@ -188,6 +197,8 @@ void Application::create_instance() {
 		create_info.flags |= vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 	}
 #ifndef NDEBUG
+	auto const debug_messenger_create_info = get_debug_messenger_create_info();
+	create_info.pNext = &debug_messenger_create_info;
 	if (has_instance_layer(m_context, VALIDATION_LAYER)) {
 		create_info.enabledLayerCount = 1u;
 		create_info.ppEnabledLayerNames = &VALIDATION_LAYER;
@@ -207,6 +218,31 @@ bool Application::has_instance_extension(vk::raii::Context const& context, std::
 	return std::ranges::any_of(context.enumerateInstanceExtensionProperties(), [extension_name](vk::ExtensionProperties const& property) {
 		return extension_name.compare(std::data(property.extensionName)) == 0;
 	});
+}
+
+void Application::create_debug_messenger() {
+	if (!m_instance.getProcAddr("vkCreateDebugUtilsMessengerEXT") || !m_instance.getProcAddr("vkDestroyDebugUtilsMessengerEXT")) {
+		return;
+	}
+	m_debug_messenger = vk::raii::DebugUtilsMessengerEXT{ m_instance, get_debug_messenger_create_info() };
+}
+
+vk::DebugUtilsMessengerCreateInfoEXT Application::get_debug_messenger_create_info() {
+	return vk::DebugUtilsMessengerCreateInfoEXT{
+		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose
+		| vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
+		| vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+		.pfnUserCallback = debug_utils_messenger_callback,
+	};
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL Application::debug_utils_messenger_callback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT const message_severity, VkDebugUtilsMessageTypeFlagsEXT const message_types,
+	[[maybe_unused]] VkDebugUtilsMessengerCallbackDataEXT const* const callback_data, [[maybe_unused]] void* user_data) {
+	std::cerr << "Vulkan message, " << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity))
+		<< ", " << vk::to_string(vk::DebugUtilsMessageTypeFlagsEXT{ message_types }) << " : " << callback_data->pMessage << std::endl;
+	return VK_FALSE;
 }
 
 void Application::create_surface() {

@@ -1,9 +1,6 @@
 #include "Application.hpp"
 
-#include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <stb_image.h>
 
 #include <iostream>
 #include <set>
@@ -20,58 +17,6 @@
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 #endif
-
-struct MvpUniformBuffer {
-	alignas(16) glm::mat4 model;
-	alignas(16) glm::mat4 view;
-	alignas(16) glm::mat4 projection;
-};
-
-struct Vertex {
-	glm::vec3 position;
-	glm::vec2 texture_coords;
-	glm::vec3 color;
-
-	constexpr static vk::VertexInputBindingDescription binding_description() {
-		return vk::VertexInputBindingDescription{
-			.binding = 0u,
-			.stride = sizeof(Vertex),
-			.inputRate = vk::VertexInputRate::eVertex,
-		};
-	}
-
-	constexpr static std::array<vk::VertexInputAttributeDescription, 3u> attribute_descriptions() {
-		return std::array<vk::VertexInputAttributeDescription, 3u>{
-			vk::VertexInputAttributeDescription{
-				.location = 0u,
-				.binding = 0u,
-				.format = vk::Format::eR32G32B32Sfloat,
-				.offset = offsetof(Vertex, position),
-			},
-			vk::VertexInputAttributeDescription{
-				.location = 1u,
-				.binding = 0u,
-				.format = vk::Format::eR32G32Sfloat,
-				.offset = offsetof(Vertex, texture_coords),
-			},
-			vk::VertexInputAttributeDescription{
-				.location = 2u,
-				.binding = 0u,
-				.format = vk::Format::eR32G32B32Sfloat,
-				.offset = offsetof(Vertex, color),
-			},
-		};
-	}
-};
-
-constexpr auto VERTICES = std::array<Vertex, 4u>{
-	Vertex{ .position = glm::vec3{ -0.5f, -0.5f, 0.f }, .texture_coords = glm::vec2{ 0.f, 1.f }, .color = glm::vec3{ 1.f, 0.f, 0.f }, },
-	Vertex{ .position = glm::vec3{ 0.5f, -0.5f, 0.f }, .texture_coords = glm::vec2{ 1.f, 1.f }, .color = glm::vec3{ 0.f, 1.f, 0.f }, },
-	Vertex{ .position = glm::vec3{ 0.5f, 0.5f, 0.f }, .texture_coords = glm::vec2{ 1.f, 0.f }, .color = glm::vec3{ 0.f, 0.f, 1.f }, },
-	Vertex{ .position = glm::vec3{ -0.5f, 0.5f, 0.f }, .texture_coords = glm::vec2{ 0.f, 0.f }, .color = glm::vec3{ 1.f, 1.f, 1.f }, },
-};
-
-constexpr auto INDICES = std::array<uint16_t, 6u>{{ 0u, 1u, 2u, 2u, 3u, 0u, }};
 
 static std::string get_spirv_shader_path(std::string shader) {
 	return SPIRV_SHADERS_DIRECTORY + ("/" + std::move(shader) + ".spv");
@@ -147,18 +92,6 @@ void Application::init_vulkan() {
 
 	create_command_pool();
 
-	create_vertex_buffer();
-	create_index_buffer();
-
-	create_texture_image();
-	create_texture_image_view();
-	create_texture_sampler();
-
-	create_uniform_buffers();
-
-	create_descriptor_pool();
-	create_descriptor_sets();
-
 	create_command_buffers();
 
 	create_sync_objects();
@@ -230,9 +163,9 @@ void Application::create_debug_messenger() {
 vk::DebugUtilsMessengerCreateInfoEXT Application::get_debug_messenger_create_info() {
 	return vk::DebugUtilsMessengerCreateInfoEXT{
 		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose
-		| vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+			| vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
 		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
-		| vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+			| vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
 		.pfnUserCallback = debug_utils_messenger_callback,
 	};
 }
@@ -303,7 +236,7 @@ void Application::create_device() {
 	auto const queue_family_indices = get_queue_family_indices();
 	auto const unique_queue_family_indices = std::set<uint32_t>{
 		queue_family_indices.graphics,
-		queue_family_indices.present
+		queue_family_indices.present,
 	};
 	auto const queue_priority = 1.f;
 	auto queue_create_infos = std::vector<vk::DeviceQueueCreateInfo>{};
@@ -320,13 +253,13 @@ void Application::create_device() {
 		.depthClamp = vk::True,
 	};
 
-	auto const extension = vk::KHRSwapchainExtensionName;
+	auto const extensions = std::to_array({ vk::KHRSwapchainExtensionName });
 
 	auto create_info = vk::DeviceCreateInfo{
 		.queueCreateInfoCount = static_cast<uint32_t>(std::size(queue_create_infos)),
 		.pQueueCreateInfos = std::data(queue_create_infos),
-		.enabledExtensionCount = 1u,
-		.ppEnabledExtensionNames = &extension,
+		.enabledExtensionCount = static_cast<uint32_t>(std::size(extensions)),
+		.ppEnabledExtensionNames = std::data(extensions),
 		.pEnabledFeatures = &features,
 	};
 #ifndef NDEBUG
@@ -382,7 +315,8 @@ void Application::create_swapchain() {
 	auto const surface_format = [&] {
 		auto const surface_formats = m_physical_device.getSurfaceFormatsKHR(m_surface);
 		auto const surface_format_it = std::ranges::find_if(surface_formats, [](vk::SurfaceFormatKHR const device_surface_format) {
-			return device_surface_format == vk::SurfaceFormatKHR{ vk::Format::eB8G8R8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear };
+			return (device_surface_format.format == vk::Format::eR8G8B8A8Srgb || device_surface_format.format == vk::Format::eB8G8R8A8Srgb)
+				&& device_surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
 		});
 		return (surface_format_it != std::cend(surface_formats)) ? *surface_format_it : surface_formats.front();
 	}();
@@ -403,15 +337,15 @@ void Application::create_swapchain() {
 
 	auto const [sharing_mode, queue_family_index_count] = [&] {
 		if (*m_graphics_queue != *m_present_queue) {
-			return std::make_tuple(vk::SharingMode::eConcurrent, 2u);
+			return std::tuple{ vk::SharingMode::eConcurrent, 2u };
 		}
-		return std::make_tuple(vk::SharingMode::eExclusive, 0u);
+		return std::tuple{ vk::SharingMode::eExclusive, 0u };
 	}();
 	auto const physical_device_queue_family_indices = get_queue_family_indices();
-	auto const queue_family_indices = std::array<uint32_t, 2u>{{
+	auto const queue_family_indices = std::to_array({
 		physical_device_queue_family_indices.graphics,
 		physical_device_queue_family_indices.present,
-	}};
+	});
 
 	auto const present_modes = m_physical_device.getSurfacePresentModesKHR(m_surface);
 	auto const present_mode_it = std::ranges::find_if(present_modes, [](vk::PresentModeKHR const present_mode) {
@@ -466,7 +400,7 @@ void Application::create_descriptor_set_layout() {
 		.pImmutableSamplers = nullptr,
 	};
 
-	auto const bindings = std::array<vk::DescriptorSetLayoutBinding, 2u>{ mvp_uniform_buffer_binding, texture_sampler_binding };
+	auto const bindings = std::to_array({ mvp_uniform_buffer_binding, texture_sampler_binding });
 	auto const create_info = vk::DescriptorSetLayoutCreateInfo{
 		.bindingCount = static_cast<uint32_t>(std::size(bindings)),
 		.pBindings = std::data(bindings),
@@ -520,32 +454,23 @@ void Application::create_render_pass() {
 }
 
 void Application::create_graphics_pipeline() {
-	auto const vertex_shader_module = create_shader_module("colored_textured.vert");
+	auto const vertex_shader_module = create_shader_module("raytracing.vert");
 	auto const vertex_shader_stage_create_info = vk::PipelineShaderStageCreateInfo{
 		.stage = vk::ShaderStageFlagBits::eVertex,
 		.module = vertex_shader_module,
 		.pName = "main",
 	};
 
-	auto const fragment_shader_module = create_shader_module("colored_textured.frag");
+	auto const fragment_shader_module = create_shader_module("raytracing.frag");
 	auto const fragment_shader_stage_create_info = vk::PipelineShaderStageCreateInfo{
 		.stage = vk::ShaderStageFlagBits::eFragment,
 		.module = fragment_shader_module,
 		.pName = "main",
 	};
 
-	auto const shader_stages = std::array<vk::PipelineShaderStageCreateInfo, 2u>{
-		vertex_shader_stage_create_info, fragment_shader_stage_create_info,
-	};
+	auto const shader_stages = std::array{ vertex_shader_stage_create_info, fragment_shader_stage_create_info };
 
-	auto const vertex_binding_description = Vertex::binding_description();
-	auto const vertex_attribute_descriptions = Vertex::attribute_descriptions();
-	auto const vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo{
-		.vertexBindingDescriptionCount = 1u,
-		.pVertexBindingDescriptions = &vertex_binding_description,
-		.vertexAttributeDescriptionCount = static_cast<uint32_t>(std::size(vertex_attribute_descriptions)),
-		.pVertexAttributeDescriptions = std::data(vertex_attribute_descriptions),
-	};
+	auto const vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo{};
 
 	auto const input_assembly_state_create_info = vk::PipelineInputAssemblyStateCreateInfo{
 		.topology = vk::PrimitiveTopology::eTriangleList,
@@ -562,7 +487,7 @@ void Application::create_graphics_pipeline() {
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eBack,
-		.frontFace = vk::FrontFace::eCounterClockwise,
+		.frontFace = vk::FrontFace::eClockwise,
 		.depthBiasEnable = vk::False,
 		.lineWidth = 1.f,
 	};
@@ -584,18 +509,23 @@ void Application::create_graphics_pipeline() {
 		.pAttachments = &color_blend_attachment_state,
 	};
 
-	auto const dynamic_states = std::array<vk::DynamicState, 2u>{{
+	auto const dynamic_states = std::to_array({
 		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor,
-	}};
+	});
 	auto const dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo{
 		.dynamicStateCount = static_cast<uint32_t>(std::size(dynamic_states)),
 		.pDynamicStates = std::data(dynamic_states),
 	};
 
+	auto const push_contant_ranges = std::array{
+		vk::PushConstantRange{ .stageFlags = vk::ShaderStageFlagBits::eVertex, .size = sizeof(float)},
+	};
 	auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
 		.setLayoutCount = 1u,
 		.pSetLayouts = &*m_descriptor_set_layout,
+		.pushConstantRangeCount = static_cast<uint32_t>(std::size(push_contant_ranges)),
+		.pPushConstantRanges = std::data(push_contant_ranges),
 	};
 
 	m_pipeline_layout = vk::raii::PipelineLayout{ m_device, pipeline_layout_create_info };
@@ -671,179 +601,6 @@ void Application::create_command_pool() {
 	m_command_pool = vk::raii::CommandPool{ m_device, create_info };
 }
 
-void Application::create_vertex_buffer() {
-	auto const buffer_size = std::size(VERTICES) * sizeof(VERTICES[0]);
-
-	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	auto* const data = staging_buffer_memory.mapMemory(0u, buffer_size);
-	std::memcpy(data, std::data(VERTICES), buffer_size);
-	staging_buffer_memory.unmapMemory();
-
-	std::tie(m_vertex_buffer, m_vertex_buffer_memory) = create_buffer(buffer_size,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	copy_buffer(staging_buffer, m_vertex_buffer, buffer_size);
-}
-
-void Application::create_index_buffer() {
-	auto const buffer_size = std::size(INDICES) * sizeof(INDICES[0]);
-
-	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	auto* const data = staging_buffer_memory.mapMemory(0u, buffer_size);
-	std::memcpy(data, std::data(INDICES), buffer_size);
-	staging_buffer_memory.unmapMemory();
-
-	std::tie(m_index_buffer, m_index_buffer_memory) = create_buffer(buffer_size,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	copy_buffer(staging_buffer, m_index_buffer, buffer_size);
-}
-
-void Application::create_texture_image() {
-	auto width = int{};
-	auto height = int{};
-	auto pixels = stbi_load(get_asset_path("textures/statue.jpg").c_str(),
-		&width, &height, nullptr, STBI_rgb_alpha);
-	if (!pixels) {
-		throw std::runtime_error{ "failed to load texture" };
-	}
-	auto const image_size = static_cast<vk::DeviceSize>(width * height * STBI_rgb_alpha);
-
-	auto const [staging_buffer, staging_buffer_memory] = create_buffer(image_size, vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	auto* const data = staging_buffer_memory.mapMemory(0u, image_size);
-	std::memcpy(data, pixels, image_size);
-	staging_buffer_memory.unmapMemory();
-
-	stbi_image_free(pixels);
-
-	std::tie(m_texture_image, m_texture_image_memory) = create_image(vk::Format::eR8G8B8A8Srgb, static_cast<uint32_t>(width),
-		static_cast<uint32_t>(height), vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-		vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	transition_image_layout(m_texture_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-	copy_buffer_to_image(staging_buffer, m_texture_image, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	transition_image_layout(m_texture_image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-}
-
-void Application::create_texture_image_view() {
-	m_texture_image_view = create_image_view(m_texture_image, vk::Format::eR8G8B8A8Srgb);
-}
-
-void Application::create_texture_sampler() {
-	auto const create_info = vk::SamplerCreateInfo{
-		.magFilter = vk::Filter::eLinear,
-		.minFilter = vk::Filter::eLinear,
-		.addressModeU = vk::SamplerAddressMode::eRepeat,
-		.addressModeV = vk::SamplerAddressMode::eRepeat,
-		.addressModeW = vk::SamplerAddressMode::eRepeat,
-		.mipLodBias = 0.f,
-		.anisotropyEnable = vk::False,
-		.maxAnisotropy = 1.f,
-		.compareEnable = vk::False,
-		.compareOp = vk::CompareOp::eAlways,
-		.minLod = 0.f,
-		.maxLod = 0.f,
-		.borderColor = vk::BorderColor::eIntOpaqueBlack,
-		.unnormalizedCoordinates = vk::False,
-	};
-
-	m_texture_sampler = vk::raii::Sampler{ m_device, create_info };
-}
-
-void Application::create_uniform_buffers() {
-	m_mvp_uniform_buffers.reserve(MAX_FRAMES_IN_FLIGHT);
-	m_mvp_uniform_buffer_memories.reserve(MAX_FRAMES_IN_FLIGHT);
-	auto const buffer_size = sizeof(MvpUniformBuffer);
-	for (auto i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		auto [buffer, buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-		m_mvp_uniform_buffers.emplace_back(std::move(buffer));
-		m_mvp_uniform_buffer_memories.emplace_back(std::move(buffer_memory));
-		m_mvp_uniform_buffer_maps[i] = m_mvp_uniform_buffer_memories.back().mapMemory(0u, buffer_size);
-	}
-}
-
-void Application::create_descriptor_pool() {
-	auto const mvp_uniform_buffer_pool_size = vk::DescriptorPoolSize{
-		.type = vk::DescriptorType::eUniformBuffer,
-		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
-	};
-	auto const texture_sampler_pool_size = vk::DescriptorPoolSize{
-		.type = vk::DescriptorType::eCombinedImageSampler,
-		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
-	};
-	auto const pool_sizes = std::array<vk::DescriptorPoolSize, 2u>{ mvp_uniform_buffer_pool_size, texture_sampler_pool_size };
-
-	auto const create_info = vk::DescriptorPoolCreateInfo{
-		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		.maxSets = MAX_FRAMES_IN_FLIGHT,
-		.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes)),
-		.pPoolSizes = std::data(pool_sizes),
-	};
-
-	m_descriptor_pool = vk::raii::DescriptorPool{ m_device, create_info };
-}
-
-void Application::create_descriptor_sets() {
-	auto layouts = std::array<vk::DescriptorSetLayout, MAX_FRAMES_IN_FLIGHT>{};
-	layouts.fill(m_descriptor_set_layout);
-
-	auto const allocate_info = vk::DescriptorSetAllocateInfo{
-		.descriptorPool = m_descriptor_pool,
-		.descriptorSetCount = static_cast<uint32_t>(std::size(layouts)),
-		.pSetLayouts = std::data(layouts),
-	};
-	m_descriptor_sets = vk::raii::DescriptorSets{ m_device, allocate_info };
-
-	auto i = 0u;
-	for (auto const& descriptor_set : m_descriptor_sets) {
-		auto const mvp_uniform_buffer_info = vk::DescriptorBufferInfo{
-			.buffer = m_mvp_uniform_buffers[i],
-			.offset = 0u,
-			.range = vk::WholeSize,
-		};
-
-		auto const texture_image_info = vk::DescriptorImageInfo{
-			.sampler = m_texture_sampler,
-			.imageView = m_texture_image_view,
-			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-		};
-
-		auto const mvp_uniform_buffer_descriptor_write = vk::WriteDescriptorSet{
-			.dstSet = descriptor_set,
-			.dstBinding = 0u,
-			.dstArrayElement = 0u,
-			.descriptorCount = 1u,
-			.descriptorType = vk::DescriptorType::eUniformBuffer,
-			.pBufferInfo = &mvp_uniform_buffer_info,
-		};
-
-		auto const texture_image_descriptor_write = vk::WriteDescriptorSet{
-			.dstSet = descriptor_set,
-			.dstBinding = 1u,
-			.dstArrayElement = 0u,
-			.descriptorCount = 1u,
-			.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-			.pImageInfo = &texture_image_info,
-		};
-
-		auto const descriptor_writes = std::array<vk::WriteDescriptorSet, 2u>{
-			mvp_uniform_buffer_descriptor_write,
-			texture_image_descriptor_write,
-		};
-
-		m_device.updateDescriptorSets(descriptor_writes, {});
-		i += 1u;
-	}
-}
-
 void Application::create_command_buffers() {
 	auto const allocate_info = vk::CommandBufferAllocateInfo{
 		.commandPool = m_command_pool,
@@ -882,8 +639,6 @@ void Application::draw_frame() {
 		recreate_swapchain();
 		return;
 	}
-
-	update_uniform_buffer(m_mvp_uniform_buffer_maps[m_current_in_flight_frame_index]);
 
 	m_device.resetFences(*in_flight_fence);
 
@@ -926,24 +681,10 @@ void Application::draw_frame() {
 	m_current_in_flight_frame_index = (m_current_in_flight_frame_index + 1u) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Application::update_uniform_buffer(void* uniform_buffer_map) const {
-	static auto const start_time = std::chrono::high_resolution_clock::now();
-	auto const current_time = std::chrono::high_resolution_clock::now();
-	auto const time = std::chrono::duration<float, std::chrono::seconds::period>{ current_time - start_time }.count();
-	auto const aspect_ratio = static_cast<float>(m_swapchain_extent.width) / static_cast<float>(m_swapchain_extent.height);
-
-	auto const mvp = MvpUniformBuffer{
-		.model = glm::rotate(glm::mat4{ 1.f }, time * glm::radians(90.f), glm::vec3{ 0.f, 0.f, 1.f }),
-		.view = glm::lookAt(glm::vec3{ 0.f, 2.f, 2.f }, glm::vec3{ 0.f }, glm::vec3{ 0.f, 1.f, 0.f }),
-		.projection = glm::perspective(glm::radians(60.f), aspect_ratio, 0.01f, 100.f),
-	};
-	std::memcpy(uniform_buffer_map, &mvp, sizeof(mvp));
-}
-
 void Application::record_command_buffer(vk::CommandBuffer const command_buffer, uint32_t const image_index) {
 	command_buffer.begin(vk::CommandBufferBeginInfo{});
 
-	auto const clear_value = vk::ClearValue{ .color = vk::ClearColorValue{ .float32 = std::array<float, 4u>{{ 0.f, 0.f, 0.f, 1.f }} } };
+	auto const clear_value = vk::ClearValue{ .color = vk::ClearColorValue{ .float32 = std::to_array({ 0.f, 0.f, 0.f, 1.f }) } };
 	auto const render_pass_begin_info = vk::RenderPassBeginInfo{
 		.renderPass = m_render_pass,
 		.framebuffer = m_framebuffers[image_index],
@@ -961,24 +702,23 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 
 	auto const viewport = vk::Viewport{
 		.x = 0.f,
-		.y = static_cast<float>(m_swapchain_extent.height),
+		.y = 0.f,
 		.width = static_cast<float>(m_swapchain_extent.width),
-		.height = -static_cast<float>(m_swapchain_extent.height),
+		.height = static_cast<float>(m_swapchain_extent.height),
 		.minDepth = 0.f,
 		.maxDepth = 1.f,
 	};
 	command_buffer.setViewport(0u, viewport);
 
 	auto const scissor = vk::Rect2D{
-		.offset = vk::Offset2D{ 0, 0, },
+		.offset = vk::Offset2D{ 0, 0 },
 		.extent = m_swapchain_extent,
 	};
 	command_buffer.setScissor(0u, scissor);
 
-	command_buffer.bindVertexBuffers(0u, *m_vertex_buffer, vk::DeviceSize{ 0u });
-	command_buffer.bindIndexBuffer(m_index_buffer, 0u, vk::IndexType::eUint16);
-	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0u, *m_descriptor_sets[m_current_in_flight_frame_index], {});
-	command_buffer.drawIndexed(static_cast<uint32_t>(std::size(INDICES)), 1u, 0u, 0u, 0u);
+	auto const aspect_ratio = viewport.width / viewport.height;
+	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0u, sizeof(float), &aspect_ratio);
+	command_buffer.draw(3u, 1u, 0u, 0u);
 
 	command_buffer.endRenderPass();
 	command_buffer.end();
@@ -1165,8 +905,7 @@ uint32_t Application::find_memory_type(uint32_t const type_bits, vk::MemoryPrope
 	throw std::runtime_error{ message };
 }
 
-template<typename Function>
-void Application::one_time_command(Function function) const {
+void Application::one_time_commands(CommandsRecorder auto commands_recorder) const {
 	auto const command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
 		.commandPool = m_command_pool,
 		.level = vk::CommandBufferLevel::ePrimary,
@@ -1180,7 +919,7 @@ void Application::one_time_command(Function function) const {
 	};
 	command_buffer.begin(command_buffer_begin_info);
 
-	function(*command_buffer);
+	commands_recorder(*command_buffer);
 
 	command_buffer.end();
 

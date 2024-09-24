@@ -26,6 +26,7 @@ file(GLOB_RECURSE SHADERS ${SHADERS_DIRECTORY}/*.vert ${SHADERS_DIRECTORY}/*.fra
 if(MSVC)
   set(VULKAN_PLAYGROUND_FLAGS
     /Wall
+    /wd4505 # 'function' : unreferenced function with internal linkage has been removed
     /wd4514 # 'function' : unreferenced inline function has been removed
     /wd4710 # 'function' : function not inlined
     /wd4711 # function 'function' selected for inline expansion
@@ -74,7 +75,7 @@ foreach(SHADER ${SHADERS})
   add_custom_command(
     OUTPUT ${SPIRV_SHADER}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SPIRV_SHADER_DIRECTORY}
-    COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O ${SHADER} -o ${SPIRV_SHADER}
+    COMMAND ${Vulkan_GLSLC_EXECUTABLE} -g -O ${SHADER} -o ${SPIRV_SHADER}
     MAIN_DEPENDENCY ${SHADER}
   )
   list(APPEND SPIRV_SHADERS ${SPIRV_SHADER})

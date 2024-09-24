@@ -7,7 +7,11 @@
 #include <vector>
 #include <array>
 #include <cstdint>
-#include <stdexcept>
+
+template<typename T>
+concept CommandsRecorder = requires(T func) {
+	func(vk::CommandBuffer{});
+};
 
 class Application {
 public:
@@ -60,24 +64,11 @@ private:
 
 	void create_command_pool();
 
-	void create_vertex_buffer();
-	void create_index_buffer();
-
-	void create_texture_image();
-	void create_texture_image_view();
-	void create_texture_sampler();
-
-	void create_uniform_buffers();
-
-	void create_descriptor_pool();
-	void create_descriptor_sets();
-
 	void create_command_buffers();
 
 	void create_sync_objects();
 
 	void draw_frame();
-	void update_uniform_buffer(void* uniform_buffer_map) const;
 	void record_command_buffer(vk::CommandBuffer command_buffer, uint32_t image_index);
 
 	void recreate_swapchain();
@@ -96,8 +87,7 @@ private:
 
 	uint32_t find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags property_flags) const;
 
-	template<typename Function>
-	void one_time_command(Function function) const;
+	void one_time_commands(CommandsRecorder auto commands_recorder) const;
 
 private:
 	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -127,23 +117,6 @@ private:
 	vk::raii::Pipeline m_graphics_pipeline = { nullptr };
 
 	vk::raii::CommandPool m_command_pool = { nullptr };
-
-	vk::raii::Buffer m_vertex_buffer = { nullptr };
-	vk::raii::DeviceMemory m_vertex_buffer_memory = { nullptr };
-	vk::raii::Buffer m_index_buffer = { nullptr };
-	vk::raii::DeviceMemory m_index_buffer_memory = { nullptr };
-
-	vk::raii::Image m_texture_image = { nullptr };
-	vk::raii::DeviceMemory m_texture_image_memory = { nullptr };
-	vk::raii::ImageView m_texture_image_view = { nullptr };
-	vk::raii::Sampler m_texture_sampler = { nullptr };
-
-	std::vector<vk::raii::Buffer> m_mvp_uniform_buffers;
-	std::vector<vk::raii::DeviceMemory> m_mvp_uniform_buffer_memories;
-	std::array<void*, MAX_FRAMES_IN_FLIGHT> m_mvp_uniform_buffer_maps;
-
-	vk::raii::DescriptorPool m_descriptor_pool = { nullptr };
-	std::vector<vk::raii::DescriptorSet> m_descriptor_sets;
 
 	std::vector<vk::raii::CommandBuffer> m_command_buffers;
 

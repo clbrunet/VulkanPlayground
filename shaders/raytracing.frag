@@ -1,55 +1,64 @@
 #version 450
 
+layout(std430, binding = 0) readonly buffer Voxels {
+	bool b_voxels[];
+};
+
+layout(push_constant) uniform PushConstants {
+	vec3 u_camera_position;
+	float u_aspect_ratio;
+	mat3 u_camera_rotation;
+};
+
 layout(location = 0) in vec3 v_ray_direction;
 
 layout(location = 0) out vec4 out_color;
 
-const vec3 ray_origin = vec3(0.f);
-
-float get_ray_sphere_intersection_coef(vec3 sphere_center, float sphere_radius) {
-	// Quadratic equation coefficients
-	float a = dot(v_ray_direction, v_ray_direction);
-	float b = dot(2.f * ray_origin * v_ray_direction - 2.f * v_ray_direction * sphere_center, vec3(1.f));
-	float c = dot(ray_origin * ray_origin - 2.f * ray_origin * sphere_center + sphere_center * sphere_center, vec3(1.f)) - pow(sphere_radius, 2.f);
-
-	float discriminant = pow(b, 2.f) - 4.f * a * c;
-	if (discriminant < 0.f) {
-		return 0.f;
-	}
-	float sqrt_discriminant = sqrt(discriminant);
-	float t1 = (-b - sqrt_discriminant) / (2.f * a);
-	float t2 = (-b + sqrt_discriminant) / (2.f * a);
-	return t1 <= 0.f ? t2 : t1;
-}
-
 void main() {
-	vec3 sphere_centers[] = {
-		vec3(0.f, 0.f, -4.f),
-		vec3(2.f, -1.f, -7.f),
-	};
-	vec3 sphere_colors[] = {
-		vec3(1.f, 0.f, 0.f),
-		vec3(0.f, 1.f, 0.f),
-	};
-
-	const float BACKGROUND_COEF = 99999.f;
-	float closest_coef = BACKGROUND_COEF;
-	int index = -1;
-	for (int i = 0; i < 2; ++i) {
-		float t = get_ray_sphere_intersection_coef(sphere_centers[i], 1.2f);
-		if (t > 0.f && t < closest_coef) {
-			closest_coef = t;
-			index = i;
+	const uint AXIS_VOXELS_COUNT = 300u;
+	const vec3 ray_direction = normalize(v_ray_direction);
+	ivec3 coords = ivec3(round(u_camera_position));
+	const ivec3 coords_steps = ivec3(round(ray_direction / abs(ray_direction)));
+	const vec3 straight_distances = fract(-coords_steps * u_camera_position + 1.5f);
+	vec3 distances = vec3(
+		length((straight_distances.x / ray_direction.x) * ray_direction),
+		length((straight_distances.y / ray_direction.y) * ray_direction),
+		length((straight_distances.z / ray_direction.z) * ray_direction)
+	);
+	const vec3 distances_steps = vec3(
+		length((1.f / ray_direction.x) * ray_direction),
+		length((1.f / ray_direction.y) * ray_direction),
+		length((1.f / ray_direction.z) * ray_direction)
+	);
+	for (uint i = 0u; i < 500u; ++i) {
+		float color_factor = 1.f;
+		if (distances.x < distances.y) {
+			if (distances.z < distances.x) {
+				coords.z += coords_steps.z;
+				distances.z += distances_steps.z;
+			}
+			else {
+				coords.x += coords_steps.x;
+				distances.x += distances_steps.x;
+				color_factor = 0.875f;
+			}
+		}
+		else {
+			if (distances.z < distances.y) {
+				coords.z += coords_steps.z;
+				distances.z += distances_steps.z;
+			}
+			else {
+				coords.y += coords_steps.y;
+				distances.y += distances_steps.y;
+				color_factor = 0.75f;
+			}
+		}
+		if (coords.x >= 0 && coords.x < AXIS_VOXELS_COUNT && coords.y >= 0 && coords.y < AXIS_VOXELS_COUNT && coords.z >= 0 && coords.z < AXIS_VOXELS_COUNT
+			&& b_voxels[coords.z * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + coords.y * AXIS_VOXELS_COUNT + coords.x]) {
+			out_color = color_factor * vec4(1.f, 0.f, 0.f, 1.f);
+			return;
 		}
 	}
-
-	if (closest_coef == BACKGROUND_COEF) {
-		out_color = vec4(0.f, 0.f, 0.f, 1.f);
-		return;
-	}
-
-	vec3 point = ray_origin + closest_coef * v_ray_direction;
-	vec3 light_direction = normalize(vec3(-1.f, -1.f, -1.f));
-	float diffuse_coef = max(dot(normalize(sphere_centers[index] - point), light_direction), 0.2f);
-	out_color = vec4(diffuse_coef * sphere_colors[index], 1.f);
+	out_color = vec4(0.f, 0.f, 0.f, 1.f);
 }

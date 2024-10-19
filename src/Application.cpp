@@ -1,6 +1,6 @@
 #include "Application.hpp"
 
-#include <glm/glm.hpp>
+#include <SimplexNoise.h>
 
 #include <iostream>
 #include <set>
@@ -12,11 +12,17 @@
 #include <optional>
 #include <span>
 #include <format>
-#include <chrono>
+#include <execution>
 
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 #endif
+
+struct PushConstants {
+	glm::vec3 camera_position;
+	float aspect_ratio;
+	glm::mat3x4 camera_rotation;
+};
 
 static std::string get_spirv_shader_path(std::string shader) {
 	return SPIRV_SHADERS_DIRECTORY + ("/" + std::move(shader) + ".spv");
@@ -37,7 +43,25 @@ Application::~Application() {
 }
 
 void Application::run() {
+	auto const get_cursor_position = [&] {
+		double xpos, ypos;
+		glfwGetCursorPos(m_window, &xpos, &ypos);
+		return glm::vec2{ xpos, ypos };
+	};
+	glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	auto last_cursor_position = get_cursor_position();
+	auto last_time = float{ 0.0f };
+	glfwSetTime(0.0);
+
 	while (!glfwWindowShouldClose(m_window)) {
+		auto const current_time = static_cast<float>(glfwGetTime());
+		auto const time_delta = current_time - last_time;
+		last_time = current_time;
+		auto const cursor_position = get_cursor_position();
+		auto const cursor_delta = cursor_position - last_cursor_position;
+		last_cursor_position = cursor_position;
+
+		m_camera.update(*m_window, time_delta, cursor_delta);
 		draw_frame();
 		glfwPollEvents();
 	}
@@ -91,8 +115,11 @@ void Application::init_vulkan() {
 	create_framebuffers();
 
 	create_command_pool();
-
 	create_command_buffers();
+
+	create_voxels_shader_storage_buffer();
+	create_descriptor_pool();
+	create_descriptor_sets();
 
 	create_sync_objects();
 }
@@ -384,23 +411,15 @@ void Application::create_image_views() {
 }
 
 void Application::create_descriptor_set_layout() {
-	auto const mvp_uniform_buffer_binding = vk::DescriptorSetLayoutBinding{
+	auto const voxels_storage_buffer_binding = vk::DescriptorSetLayoutBinding{
 		.binding = 0u,
-		.descriptorType = vk::DescriptorType::eUniformBuffer,
-		.descriptorCount = 1u,
-		.stageFlags = vk::ShaderStageFlagBits::eVertex,
-		.pImmutableSamplers = nullptr,
-	};
-
-	auto const texture_sampler_binding = vk::DescriptorSetLayoutBinding{
-		.binding = 1u,
-		.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+		.descriptorType = vk::DescriptorType::eStorageBuffer,
 		.descriptorCount = 1u,
 		.stageFlags = vk::ShaderStageFlagBits::eFragment,
 		.pImmutableSamplers = nullptr,
 	};
 
-	auto const bindings = std::to_array({ mvp_uniform_buffer_binding, texture_sampler_binding });
+	auto const bindings = std::to_array({ voxels_storage_buffer_binding });
 	auto const create_info = vk::DescriptorSetLayoutCreateInfo{
 		.bindingCount = static_cast<uint32_t>(std::size(bindings)),
 		.pBindings = std::data(bindings),
@@ -519,7 +538,10 @@ void Application::create_graphics_pipeline() {
 	};
 
 	auto const push_contant_ranges = std::array{
-		vk::PushConstantRange{ .stageFlags = vk::ShaderStageFlagBits::eVertex, .size = sizeof(float)},
+		vk::PushConstantRange{
+			.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			.size = sizeof(PushConstants)
+		},
 	};
 	auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
 		.setLayoutCount = 1u,
@@ -608,6 +630,77 @@ void Application::create_command_buffers() {
 		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
 	};
 	m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
+}
+
+void Application::create_voxels_shader_storage_buffer() {
+	constexpr auto AXIS_VOXELS_COUNT = 300u;
+	auto const buffer_size = AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * sizeof(vk::Bool32);
+
+	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+	auto const data = reinterpret_cast<vk::Bool32*>(staging_buffer_memory.mapMemory(0u, buffer_size));
+
+	auto simplex_noise = SimplexNoise{ 0.01f };
+	constexpr auto OCTAVES_COUNT = 3u;
+	auto zs = std::views::iota(0u, AXIS_VOXELS_COUNT);
+	std::for_each(std::execution::par_unseq, std::begin(zs), std::end(zs), [&](uint32_t const z) {
+		for (auto x = 0u; x < AXIS_VOXELS_COUNT; ++x) {
+			auto const height = static_cast<uint32_t>((simplex_noise.fractal(OCTAVES_COUNT, static_cast<float>(x), static_cast<float>(z)) + 1.f) * 0.5f * 50.f);
+			for (auto y = 0u; y < AXIS_VOXELS_COUNT; ++y) {
+				auto const index = z * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + y * AXIS_VOXELS_COUNT + x;
+				data[index] = static_cast<uint32_t>(y <= height);
+			}
+		}
+	});
+	staging_buffer_memory.unmapMemory();
+
+	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+		vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+	copy_buffer(staging_buffer, m_voxels_storage_buffer, buffer_size);
+}
+
+void Application::create_descriptor_pool() {
+	auto const voxels_storage_buffer_pool_size = vk::DescriptorPoolSize{
+		.type = vk::DescriptorType::eStorageBuffer,
+		.descriptorCount = 1u,
+	};
+	auto const pool_sizes = std::array{ voxels_storage_buffer_pool_size };
+	auto const create_info = vk::DescriptorPoolCreateInfo{
+		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+		.maxSets = MAX_FRAMES_IN_FLIGHT,
+		.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes)),
+		.pPoolSizes = std::data(pool_sizes),
+	};
+	m_descriptor_pool = vk::raii::DescriptorPool{ m_device, create_info };
+}
+
+void Application::create_descriptor_sets() {
+	auto layouts = std::array<vk::DescriptorSetLayout, MAX_FRAMES_IN_FLIGHT>{};
+	layouts.fill(m_descriptor_set_layout);
+	auto const allocate_info = vk::DescriptorSetAllocateInfo{
+		.descriptorPool = m_descriptor_pool,
+		.descriptorSetCount = static_cast<uint32_t>(std::size(layouts)),
+		.pSetLayouts = std::data(layouts),
+	};
+	m_descriptor_sets = vk::raii::DescriptorSets{ m_device, allocate_info };
+	for (auto const& descriptor_set : m_descriptor_sets) {
+		auto const voxels_storage_buffer_info = vk::DescriptorBufferInfo{
+			.buffer = m_voxels_storage_buffer,
+			.offset = 0u,
+			.range = vk::WholeSize,
+		};
+		auto const voxels_storage_buffer_descriptor_write = vk::WriteDescriptorSet{
+			.dstSet = descriptor_set,
+			.dstBinding = 0u,
+			.dstArrayElement = 0u,
+			.descriptorCount = 1u,
+			.descriptorType = vk::DescriptorType::eStorageBuffer,
+			.pBufferInfo = &voxels_storage_buffer_info,
+		};
+		auto const descriptor_writes = std::array{ voxels_storage_buffer_descriptor_write };
+		m_device.updateDescriptorSets(descriptor_writes, {});
+	}
 }
 
 void Application::create_sync_objects() {
@@ -716,8 +809,13 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 	};
 	command_buffer.setScissor(0u, scissor);
 
-	auto const aspect_ratio = viewport.width / viewport.height;
-	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0u, sizeof(float), &aspect_ratio);
+	auto const push_constants = PushConstants{
+		.camera_position = m_camera.position(),
+		.aspect_ratio = viewport.width / viewport.height,
+		.camera_rotation = m_camera.rotation(),
+	};
+	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
+	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0u, *m_descriptor_sets[m_current_in_flight_frame_index], {});
 	command_buffer.draw(3u, 1u, 0u, 0u);
 
 	command_buffer.endRenderPass();
@@ -773,7 +871,7 @@ std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> Application::create_buffer(
 }
 
 void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
-	one_time_command([=](vk::CommandBuffer const command_buffer) {
+	one_time_commands([=](vk::CommandBuffer const command_buffer) {
 		auto const copy_region = vk::BufferCopy{ .size = size };
 		command_buffer.copyBuffer(src, dst, copy_region);
 	});
@@ -808,7 +906,7 @@ std::tuple<vk::raii::Image, vk::raii::DeviceMemory> Application::create_image(vk
 }
 
 void Application::transition_image_layout(vk::Image const image, vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) const {
-	one_time_command([=](vk::CommandBuffer const command_buffer) {
+	one_time_commands([=](vk::CommandBuffer const command_buffer) {
 		auto memory_barrier = vk::ImageMemoryBarrier{
 			.oldLayout = old_layout,
 			.newLayout = new_layout,
@@ -845,7 +943,7 @@ void Application::transition_image_layout(vk::Image const image, vk::ImageLayout
 }
 
 void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
-	one_time_command([=](vk::CommandBuffer const command_buffer) {
+	one_time_commands([=](vk::CommandBuffer const command_buffer) {
 		auto const copy_region = vk::BufferImageCopy{
 			.bufferOffset = 0u,
 			.bufferRowLength = 0u,

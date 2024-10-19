@@ -1,7 +1,10 @@
 #pragma once
 
+#include "Camera.hpp"
+
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_raii.hpp>
+#include <glm/glm.hpp>
 
 #include <string_view>
 #include <vector>
@@ -18,7 +21,7 @@ public:
 	Application();
 	Application(Application const&) = delete;
 	~Application();
-	
+
 	Application& operator=(Application const&) = delete;
 
 	void run();
@@ -63,8 +66,11 @@ private:
 	void create_framebuffers();
 
 	void create_command_pool();
-
 	void create_command_buffers();
+
+	void create_voxels_shader_storage_buffer();
+	void create_descriptor_pool();
+	void create_descriptor_sets();
 
 	void create_sync_objects();
 
@@ -117,11 +123,18 @@ private:
 	vk::raii::Pipeline m_graphics_pipeline = { nullptr };
 
 	vk::raii::CommandPool m_command_pool = { nullptr };
+	vk::raii::CommandBuffers m_command_buffers = { nullptr };
 
-	std::vector<vk::raii::CommandBuffer> m_command_buffers;
+	vk::raii::Buffer m_voxels_storage_buffer = { nullptr };
+	vk::raii::DeviceMemory m_voxels_storage_buffer_memory = { nullptr };
+
+	vk::raii::DescriptorPool m_descriptor_pool = { nullptr };
+	vk::raii::DescriptorSets m_descriptor_sets = { nullptr };
 
 	std::vector<vk::raii::Semaphore> m_image_available_semaphores;
 	std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
 	std::vector<vk::raii::Fence> m_in_flight_fences;
 	uint8_t m_current_in_flight_frame_index = 0u;
+
+	Camera m_camera = Camera{ glm::vec3{ 50.f, 30.f, 130.f }, glm::vec2{ 0.f, 0.f } };
 };

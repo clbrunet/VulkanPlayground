@@ -55,7 +55,7 @@ void main() {
 			}
 		}
 		if (coords.x >= 0 && coords.x < AXIS_VOXELS_COUNT && coords.y >= 0 && coords.y < AXIS_VOXELS_COUNT && coords.z >= 0 && coords.z < AXIS_VOXELS_COUNT
-			&& b_voxels[coords.z * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + coords.y * AXIS_VOXELS_COUNT + coords.x]) {
+			&& b_voxels[coords.y * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + coords.z * AXIS_VOXELS_COUNT + coords.x]) {
 			out_color = color_factor * vec4(1.f, 0.f, 0.f, 1.f);
 			return;
 		}

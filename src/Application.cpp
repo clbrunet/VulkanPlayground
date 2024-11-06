@@ -1,7 +1,5 @@
 #include "Application.hpp"
 
-#include <SimplexNoise.h>
-
 #include <iostream>
 #include <set>
 #include <algorithm>
@@ -13,6 +11,7 @@
 #include <span>
 #include <format>
 #include <execution>
+#include <filesystem>
 
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
@@ -24,12 +23,83 @@ struct PushConstants {
 	glm::mat3x4 camera_rotation;
 };
 
-static std::string get_spirv_shader_path(std::string shader) {
-	return SPIRV_SHADERS_DIRECTORY + ("/" + std::move(shader) + ".spv");
+static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
+	auto path = std::filesystem::path{ SPIRV_SHADERS_DIRECTORY } / shader;
+	path += ".spv";
+	return path;
 }
 
-static std::string get_asset_path(std::string asset) {
-	return ASSETS_DIRECTORY + ("/" + std::move(asset));
+static std::filesystem::path get_asset_path(std::string_view const asset) {
+	return std::filesystem::path{ ASSETS_DIRECTORY } / asset;
+}
+
+static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::path const& path) {
+	auto ifstream = std::ifstream{ path, std::ios::ate | std::ios::binary};
+	if (!ifstream) {
+		return std::nullopt;
+	}
+
+	auto bytes = std::vector<uint8_t>(static_cast<size_t>(ifstream.tellg()));
+	ifstream.seekg(0);
+	ifstream.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
+	return std::make_optional(std::move(bytes));
+}
+
+template<typename T>
+concept ImportVoxel = requires(T func) {
+	func(glm::ivec3{});
+};
+
+[[nodiscard]]
+static bool import_vox(std::filesystem::path const& path, ImportVoxel auto import_voxel) {
+	auto ifstream = std::ifstream{ path, std::ios::binary };
+	if (!ifstream) {
+		return false;
+	}
+
+	// format : https://github.com/ephtracy/voxel-model/tree/master
+	ifstream.ignore(4); // "VOX "
+	ifstream.ignore(4); // version
+	ifstream.ignore(4); // MAIN chunk id
+	ifstream.ignore(4); // chunk content size (0 for MAIN)
+	ifstream.ignore(4); // children chunks size
+
+	while (ifstream.good()) {
+		auto chunk_id_letters = std::array<char, 4u>{};
+		ifstream.read(std::data(chunk_id_letters), 4);
+		auto const chunk_id = std::string_view{ std::data(chunk_id_letters), std::size(chunk_id_letters) };
+		auto chunk_content_size = int32_t{};
+		ifstream.read(reinterpret_cast<char*>(&chunk_content_size), sizeof(chunk_content_size));
+		auto children_chunks_size = int32_t{};
+		ifstream.read(reinterpret_cast<char*>(&children_chunks_size), sizeof(children_chunks_size));
+
+		if (chunk_id == "SIZE") {
+			ifstream.ignore(4); // size x
+			ifstream.ignore(4); // size y
+			ifstream.ignore(4); // size z
+		} else if (chunk_id ==  "XYZI") {
+			auto voxel_count = int32_t{};
+			ifstream.read(reinterpret_cast<char*>(&voxel_count), sizeof(voxel_count));
+			for (auto i = 0; i < voxel_count; ++i) {
+				auto x = uint8_t{};
+				ifstream.read(reinterpret_cast<char*>(&x), sizeof(x));
+				auto y = uint8_t{};
+				ifstream.read(reinterpret_cast<char*>(&y), sizeof(y));
+				auto z = uint8_t{};
+				ifstream.read(reinterpret_cast<char*>(&z), sizeof(z));
+				ifstream.ignore(1); // palette index
+				import_voxel(glm::ivec3{ x, z, 255 - y }); // vox use a x right, z up and y forward coordinates system
+			}
+		} else if (chunk_id ==  "PACK") {
+			ifstream.ignore(4); // number of SIZE and XYZI chunks (model count)
+		} else if (chunk_id ==  "RGBA") {
+			ifstream.ignore(4ll * 256ll); // palette
+		} else {
+			std::cerr << "Warning : " << path << " contains unsupported chunk id \"" << chunk_id << '"' << std::endl;
+			ifstream.ignore(chunk_content_size + children_chunks_size);
+		}
+	}
+	return true;
 }
 
 Application::Application() {
@@ -572,23 +642,11 @@ void Application::create_graphics_pipeline() {
 	m_graphics_pipeline = vk::raii::Pipeline{ m_device, { nullptr }, create_info };
 }
 
-static std::optional<std::vector<uint8_t>> read_binary_file(std::string const& path) {
-	auto file = std::ifstream{ path, std::ios::ate | std::ios::binary };
-	if (!file) {
-		return std::nullopt;
-	}
-
-	auto bytes = std::vector<uint8_t>(static_cast<size_t>(file.tellg()));
-	file.seekg(0);
-	file.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
-	return std::make_optional(std::move(bytes));
-}
-
-vk::raii::ShaderModule Application::create_shader_module(std::string shader) const {
-	auto const spirv_path = get_spirv_shader_path(std::move(shader));
+vk::raii::ShaderModule Application::create_shader_module(std::string_view const shader) const {
+	auto const spirv_path = get_spirv_shader_path(shader);
 	auto const code = read_binary_file(spirv_path);
 	if (!code) {
-		throw std::runtime_error{ "cannot read \"" + spirv_path + '"' };
+		throw std::runtime_error{ "cannot read \"" + spirv_path.string() + '"'};
 	}
 
 	auto const create_info = vk::ShaderModuleCreateInfo{
@@ -640,19 +698,16 @@ void Application::create_voxels_shader_storage_buffer() {
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	auto const data = reinterpret_cast<vk::Bool32*>(staging_buffer_memory.mapMemory(0u, buffer_size));
 
-	auto simplex_noise = SimplexNoise{ 0.01f };
-	constexpr auto OCTAVES_COUNT = 3u;
-	auto zs = std::views::iota(0u, AXIS_VOXELS_COUNT);
-	std::for_each(std::execution::par_unseq, std::begin(zs), std::end(zs), [&](uint32_t const z) {
-		for (auto x = 0u; x < AXIS_VOXELS_COUNT; ++x) {
-			auto const height = static_cast<uint32_t>((simplex_noise.fractal(OCTAVES_COUNT, static_cast<float>(x), static_cast<float>(z)) + 1.f) * 0.5f * 50.f);
-			for (auto y = 0u; y < AXIS_VOXELS_COUNT; ++y) {
-				auto const index = z * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + y * AXIS_VOXELS_COUNT + x;
-				data[index] = static_cast<uint32_t>(y <= height);
-			}
-		}
+	std::fill_n(data, AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT, vk::False);
+	auto const vox_path = get_asset_path("vox/teapot.vox");
+	auto const has_import_succeed = import_vox(vox_path, [data](glm::ivec3 position) {
+		auto const index = position.y * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + position.z * AXIS_VOXELS_COUNT + position.x;
+		data[index] = vk::True;
 	});
 	staging_buffer_memory.unmapMemory();
+	if (!has_import_succeed) {
+		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"'};
+	}
 
 	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
 		vk::MemoryPropertyFlagBits::eDeviceLocal);

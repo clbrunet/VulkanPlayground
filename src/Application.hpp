@@ -61,7 +61,7 @@ private:
 	void create_descriptor_set_layout();
 	void create_render_pass();
 	void create_graphics_pipeline();
-	vk::raii::ShaderModule create_shader_module(std::string shader) const;
+	vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
 
 	void create_framebuffers();
 
@@ -136,5 +136,5 @@ private:
 	std::vector<vk::raii::Fence> m_in_flight_fences;
 	uint8_t m_current_in_flight_frame_index = 0u;
 
-	Camera m_camera = Camera{ glm::vec3{ 50.f, 30.f, 130.f }, glm::vec2{ 0.f, 0.f } };
+	Camera m_camera = Camera{ glm::vec3{ 70.f, 30.f, 300.f }, glm::vec2{ 0.f, 0.f } };
 };

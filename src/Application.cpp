@@ -502,7 +502,7 @@ void Application::create_render_pass() {
 	auto const attachment_description = vk::AttachmentDescription{
 		.format = m_swapchain_format,
 		.samples = vk::SampleCountFlagBits::e1,
-		.loadOp = vk::AttachmentLoadOp::eClear,
+		.loadOp = vk::AttachmentLoadOp::eDontCare,
 		.storeOp = vk::AttachmentStoreOp::eStore,
 		.stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
 		.stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
@@ -832,7 +832,6 @@ void Application::draw_frame() {
 void Application::record_command_buffer(vk::CommandBuffer const command_buffer, uint32_t const image_index) {
 	command_buffer.begin(vk::CommandBufferBeginInfo{});
 
-	auto const clear_value = vk::ClearValue{ .color = vk::ClearColorValue{ .float32 = std::to_array({ 0.f, 0.f, 0.f, 1.f }) } };
 	auto const render_pass_begin_info = vk::RenderPassBeginInfo{
 		.renderPass = m_render_pass,
 		.framebuffer = m_framebuffers[image_index],
@@ -840,8 +839,6 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 			.offset = vk::Offset2D{ 0, 0, },
 			.extent = m_swapchain_extent,
 		},
-		.clearValueCount = 1u,
-		.pClearValues = &clear_value,
 	};
 
 	command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);

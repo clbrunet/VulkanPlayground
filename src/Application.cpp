@@ -318,11 +318,7 @@ uint32_t Application::get_physical_device_score(vk::PhysicalDevice const physica
 	}
 	auto score = 1u;
 
-	auto const present_modes = physical_device.getSurfacePresentModesKHR(m_surface);
-	auto const mailbox_present_mode_it = std::ranges::find_if(present_modes, [](vk::PresentModeKHR const present_mode) {
-		return present_mode == vk::PresentModeKHR::eMailbox;
-	});
-	if (mailbox_present_mode_it != std::cend(present_modes)) {
+	if (physical_device.getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
 		score += 1u;
 	}
 
@@ -444,12 +440,6 @@ void Application::create_swapchain() {
 		physical_device_queue_family_indices.present,
 	});
 
-	auto const present_modes = m_physical_device.getSurfacePresentModesKHR(m_surface);
-	auto const present_mode_it = std::ranges::find_if(present_modes, [](vk::PresentModeKHR const present_mode) {
-		return present_mode == vk::PresentModeKHR::eMailbox;
-	});
-	auto const present_mode = (present_mode_it != std::cend(present_modes)) ? *present_mode_it : vk::PresentModeKHR::eFifo;
-
 	auto const create_info = vk::SwapchainCreateInfoKHR{
 		.surface = m_surface,
 		.minImageCount = min_image_count,
@@ -463,7 +453,7 @@ void Application::create_swapchain() {
 		.pQueueFamilyIndices = std::data(queue_family_indices),
 		.preTransform = surface_capabilities.currentTransform,
 		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		.presentMode = present_mode,
+		.presentMode = vk::PresentModeKHR::eFifo,
 		.clipped = vk::True,
 		.oldSwapchain = vk::SwapchainKHR{},
 	};

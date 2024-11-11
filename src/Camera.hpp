@@ -14,8 +14,8 @@ public:
 	void update(GLFWwindow& window, float time_delta, glm::vec2 cursor_delta);
 
 private:
-	static constexpr float DEGREE_PER_INPUT_SENSITIVITY = 0.3f;
-	static constexpr float BASE_SPEED = 50.0f;
+	static constexpr float DEGREE_PER_INPUT_SENSITIVITY = 0.25f;
+	static constexpr float BASE_SPEED = 30.0f;
 
 	glm::vec3 m_position;
 	float m_pitch = 0.0f;

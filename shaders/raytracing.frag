@@ -1,7 +1,39 @@
 #version 450
 
-layout(std430, binding = 0) readonly buffer Voxels {
-	bool b_voxels[];
+struct OctreeNode {
+	uint bits;
+};
+
+bool is_leaf(OctreeNode node) {
+	return (node.bits & 1u) == 1u;
+}
+
+uint children_mask(OctreeNode node) {
+	return (node.bits << 23u) >> 24u;
+}
+
+uint first_child_index(OctreeNode node) {
+	return node.bits >> 9u;
+}
+
+const uint OCTREE_DEPTH = 9u;
+const uint STACK_LENGTH = OCTREE_DEPTH - 1u;
+
+struct StackElem {
+	uint octants_intesection_mask;
+	uint checked_octant_count;
+	uint node_index;
+	vec3 node_min;
+};
+
+struct Ray {
+	vec3 position;
+	vec3 direction;
+	vec3 direction_inverse;
+};
+
+layout(std430, binding = 0) readonly buffer OctreeNodesBuffer {
+	OctreeNode b_octree_nodes[];
 };
 
 layout(push_constant) uniform PushConstants {
@@ -14,81 +46,162 @@ layout(location = 0) in vec3 v_ray_direction;
 
 layout(location = 0) out vec4 out_color;
 
-float ray_aabb_intersection(vec3 ray_position, vec3 ray_direction) {
-	const vec3 aabb_min = vec3(0.f, 0.f, 0.f);
-	const vec3 aabb_max = vec3(256.f, 256.f, 256.f);
-
-	const vec3 t1 = (aabb_min - ray_position) / ray_direction;
-	const vec3 t2 = (aabb_max - ray_position) / ray_direction;
-
-	const vec3 mins = min(t1, t2);
-	const vec3 maxs = max(t1, t2);
-
-	const float tmin = max(max(mins.x, mins.y), mins.z);
-	const float tmax = min(min(maxs.x, maxs.y), maxs.z);
-
-	if (tmin > tmax || tmax < 0.f) {
-		return -1.f;
+Ray compute_ray() {
+	Ray ray;
+	ray.position = u_camera_position / float(exp2(OCTREE_DEPTH - 1u)) + 1.f;
+	ray.direction = normalize(v_ray_direction);
+	// Get rid of small ray direction components to avoid division by zero.
+	const float epsilon = exp2(-23.f);
+	if (abs(ray.direction.x) < epsilon) {
+		ray.direction.x = ray.direction.x >= 0.f ? epsilon : -epsilon;
 	}
-	return max(tmin, 0.f);
+	if (abs(ray.direction.y) < epsilon) {
+		ray.direction.y = ray.direction.y >= 0.f ? epsilon : -epsilon;
+	}
+	if (abs(ray.direction.z) < epsilon) {
+		ray.direction.z = ray.direction.z >= 0.f ? epsilon : -epsilon;
+	}
+	ray.direction_inverse = 1.f / ray.direction;
+	return ray;
+}
+
+uint compute_first_octant_index(const vec3 ray_direction) {
+	uint first_octant_index = 0u;
+	if (ray_direction.x < 0.f) {
+		first_octant_index |= 1u;
+	}
+	if (ray_direction.y < 0.f) {
+		first_octant_index |= 4u;
+	}
+	if (ray_direction.z < 0.f) {
+		first_octant_index |= 2u;
+	}
+	return first_octant_index;
+}
+
+uint compute_octants_intesection_mask(const Ray ray, const vec3 node_min, const vec3 node_max) {
+	const float half_extent = (node_max.x - node_min.x) / 2.f;
+	const vec3 node_center = node_min + half_extent;
+
+	const vec3 octant_separator_ts = (node_center - ray.position) * ray.direction_inverse;
+
+	const vec3 half_extent_ray_lengths = half_extent * abs(ray.direction_inverse);
+	const vec3 t_mins = octant_separator_ts - half_extent_ray_lengths;
+	const vec3 t_maxs = octant_separator_ts + half_extent_ray_lengths;
+
+	const float t_min = max(max(max(t_mins.x, t_mins.y), t_mins.z), 0.f);
+	const float t_max = min(min(t_maxs.x, t_maxs.y), t_maxs.z);
+
+	uint intersection_mask = 0u;
+
+	// check intersections with the planes dividing the node into octants
+	const uint LEFT_OCTANTS_BITS = 0x55; // 0b01010101
+	const uint RIGHT_OCTANTS_BITS = 0xAA; // 0b10101010
+	const uint FRONT_OCTANTS_BITS = 0x33; // 0b00110011
+	const uint BACK_OCTANTS_BITS = 0xCC; // 0b11001100
+	const uint DOWN_OCTANTS_BITS = 0x0F; // 0b00001111
+	const uint UP_OCTANTS_BITS = 0xF0; // 0b11110000
+
+	const vec3 x_separator_point = ray.position + octant_separator_ts.x * ray.direction;
+	const uint a = x_separator_point.y < node_center.y ? DOWN_OCTANTS_BITS : UP_OCTANTS_BITS;
+	const uint b = x_separator_point.z < node_center.z ? FRONT_OCTANTS_BITS : BACK_OCTANTS_BITS;
+	intersection_mask |= (octant_separator_ts.x < t_min || t_max < octant_separator_ts.x) ? 0u : a & b;
+
+	const vec3 y_separator_point = ray.position + octant_separator_ts.y * ray.direction;
+	const uint c = y_separator_point.x < node_center.x ? LEFT_OCTANTS_BITS : RIGHT_OCTANTS_BITS;
+	const uint d = y_separator_point.z < node_center.z ? FRONT_OCTANTS_BITS : BACK_OCTANTS_BITS;
+	intersection_mask |= (octant_separator_ts.y < t_min || t_max < octant_separator_ts.y) ? 0u : c & d;
+
+	const vec3 z_separator_point = ray.position + octant_separator_ts.z * ray.direction;
+	const uint e = z_separator_point.x < node_center.x ? LEFT_OCTANTS_BITS : RIGHT_OCTANTS_BITS;
+	const uint f = z_separator_point.y < node_center.y ? DOWN_OCTANTS_BITS : UP_OCTANTS_BITS;
+	intersection_mask |= (octant_separator_ts.z < t_min || t_max < octant_separator_ts.z) ? 0u : e & f;
+
+	// handle the case when the ray starts and ends inside a single octant
+	const vec3 inside_point = ray.position + (t_min + t_max) / 2.f * ray.direction;
+	uint inside_point_octant_bit = 1u;
+	inside_point_octant_bit <<= inside_point.x < node_center.x ? 0u : 1u;
+	inside_point_octant_bit <<= inside_point.y < node_center.y ? 0u : 4u;
+	inside_point_octant_bit <<= inside_point.z < node_center.z ? 0u : 2u;
+	intersection_mask |= (t_min > t_max) ? 0u : inside_point_octant_bit;
+
+	return intersection_mask;
+}
+
+uint compute_current_octant_index(const OctreeNode node, inout StackElem stack_elem, const uint first_octant_index) {
+	const uint children_mask = children_mask(node);
+	while (stack_elem.checked_octant_count < 8u) {
+		const uint current_octant_index = stack_elem.checked_octant_count ^ first_octant_index;
+		if ((children_mask & (1u << current_octant_index)) != 0u && (stack_elem.octants_intesection_mask & (1u << current_octant_index)) != 0u) {
+			return current_octant_index;
+		}
+		stack_elem.checked_octant_count += 1u;
+	}
+	return 8u;
+}
+
+vec3 compute_color(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
+	const vec3 t1 = (aabb_min - ray.position) * ray.direction_inverse;
+	const vec3 t2 = (aabb_max - ray.position) * ray.direction_inverse;
+	const vec3 t_mins = min(t1, t2);
+	const float t_min = max(max(t_mins.x, t_mins.y), t_mins.z);
+
+	if (t_min == t1.x) {
+		return vec3(1.f, 0.f, 0.f);
+	} else if (t_min == t1.y) {
+		return vec3(0.f, 1.f, 0.f);
+	} else if (t_min == t1.z) {
+		return vec3(0.f, 0.f, 1.f);
+	} else if (t_min == t2.x) {
+		return vec3(1.f, 1.f, 0.f);
+	} else if (t_min == t2.y) {
+		return vec3(0.f, 1.f, 1.f);
+	} else {
+		return vec3(1.f, 0.f, 1.f);
+	}
 }
 
 void main() {
-	const uint AXIS_VOXELS_COUNT = 300u;
-	const vec3 ray_direction = normalize(v_ray_direction);
-	float t = ray_aabb_intersection(u_camera_position, ray_direction);
-	if (t == -1.f) {
-		out_color = vec4(0.f, 0.f, 0.f, 1.f);
-		return;
-	}
-	vec3 ray_position = u_camera_position;
-	if (t != 0.0f) {
-		ray_position += (t - 0.5f) * ray_direction;
-	}
-	ivec3 coords = ivec3(floor(ray_position));
-	const ivec3 coords_steps = ivec3(sign(ray_direction));
+	Ray ray = compute_ray();
+	const uint first_octant_index = compute_first_octant_index(ray.direction);
+	uint stack_index = 0u;
+	StackElem stack[STACK_LENGTH];
+	stack[0] = StackElem(compute_octants_intesection_mask(ray, vec3(1.f), vec3(2.f)), 0u, 0u, vec3(1.f));
 
-	const vec3 ray_position_fract = fract(ray_position);
-	const vec3 straight_distances = mix(ray_position_fract, 1.f - ray_position_fract, vec3(coords_steps + 1) / 2.f);
-	vec3 distances = vec3(
-		length((straight_distances.x / ray_direction.x) * ray_direction),
-		length((straight_distances.y / ray_direction.y) * ray_direction),
-		length((straight_distances.z / ray_direction.z) * ray_direction)
-	);
-	const vec3 distances_steps = vec3(
-		length((1.f / ray_direction.x) * ray_direction),
-		length((1.f / ray_direction.y) * ray_direction),
-		length((1.f / ray_direction.z) * ray_direction)
-	);
-	for (uint i = 0u; i < 500u; ++i) {
-		float color_factor = 1.f;
-		if (distances.x < distances.y) {
-			if (distances.z < distances.x) {
-				coords.z += coords_steps.z;
-				distances.z += distances_steps.z;
+	uint iter = 0u;
+	while (iter < 1000u) {
+		iter += 1u;
+
+		const OctreeNode node = b_octree_nodes[stack[stack_index].node_index];
+		const uint current_octant_index = compute_current_octant_index(node, stack[stack_index], first_octant_index);
+
+		if (current_octant_index == 8u) {
+			// POP
+			if (stack_index == 0u) {
+				break;
 			}
-			else {
-				coords.x += coords_steps.x;
-				distances.x += distances_steps.x;
-				color_factor = 0.8f;
-			}
+			stack_index -= 1u;
+			stack[stack_index].checked_octant_count += 1u;
+			continue;
 		}
-		else {
-			if (distances.z < distances.y) {
-				coords.z += coords_steps.z;
-				distances.z += distances_steps.z;
-			}
-			else {
-				coords.y += coords_steps.y;
-				distances.y += distances_steps.y;
-				color_factor = 0.6f;
-			}
-		}
-		if (coords.x >= 0 && coords.x < AXIS_VOXELS_COUNT && coords.y >= 0 && coords.y < AXIS_VOXELS_COUNT && coords.z >= 0 && coords.z < AXIS_VOXELS_COUNT
-			&& b_voxels[coords.y * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + coords.z * AXIS_VOXELS_COUNT + coords.x]) {
-			out_color = color_factor * vec4(1.f, 0.f, 0.f, 1.f);
+
+		const float octant_size = exp2(-float(stack_index + 1u));
+		const vec3 octant_min = stack[stack_index].node_min + octant_size
+			* vec3(float(current_octant_index & 1u), float((current_octant_index & 4u) >> 2u), float((current_octant_index & 2u) >> 1u));
+
+		const uint first_child_index = first_child_index(node);
+		const OctreeNode child = b_octree_nodes[first_child_index + current_octant_index];
+		if (is_leaf(child)) {
+			out_color = vec4(compute_color(ray, octant_min, octant_min + octant_size), 1.f);
 			return;
 		}
+		if (stack_index >= STACK_LENGTH - 1u) {
+			stack[stack_index].checked_octant_count += 1u;
+			continue;
+		}
+		stack_index += 1u;
+		stack[stack_index] = StackElem(compute_octants_intesection_mask(ray, octant_min, octant_min + octant_size),
+			0u, first_child_index + current_octant_index, octant_min);
 	}
 	out_color = vec4(0.f, 0.f, 0.f, 1.f);
 }

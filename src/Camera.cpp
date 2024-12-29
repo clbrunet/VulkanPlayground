@@ -27,10 +27,10 @@ void Camera::update(GLFWwindow& window, float const time_delta, glm::vec2 const 
 void Camera::update_position(GLFWwindow& window, float const time_delta) {
 	auto direction = glm::vec3(0.0f);
 	if (glfwGetKey(&window, GLFW_KEY_W)) {
-		direction.z -= 1.0f;
+		direction.z += 1.0f;
 	}
 	if (glfwGetKey(&window, GLFW_KEY_S)) {
-		direction.z += 1.0f;
+		direction.z -= 1.0f;
 	}
 	if (glfwGetKey(&window, GLFW_KEY_A)) {
 		direction.x -= 1.0f;
@@ -58,7 +58,7 @@ void Camera::update_position(GLFWwindow& window, float const time_delta) {
 }
 
 void Camera::update_rotation(glm::vec2 const cursor_delta) {
-	glm::vec2 change = glm::radians(-DEGREE_PER_INPUT_SENSITIVITY) * cursor_delta;
+	glm::vec2 change = glm::radians(DEGREE_PER_INPUT_SENSITIVITY) * cursor_delta;
 	m_pitch = glm::clamp(m_pitch + change.y, -std::numbers::pi_v<float> / 2.f, std::numbers::pi_v<float> / 2.f);
 	m_yaw += change.x;
 	m_rotation = glm::eulerAngleYX(m_yaw, m_pitch);

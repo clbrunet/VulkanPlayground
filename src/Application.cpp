@@ -88,7 +88,7 @@ static bool import_vox(std::filesystem::path const& path, ImportVoxel auto impor
 				auto z = uint8_t{};
 				ifstream.read(reinterpret_cast<char*>(&z), sizeof(z));
 				ifstream.ignore(1); // palette index
-				import_voxel(glm::ivec3{ x, z, 255 - y }); // vox use a x right, z up and y forward coordinates system
+				import_voxel(glm::ivec3{ x, z, y }); // vox uses a x right, z up and y forward coordinates system
 			}
 		} else if (chunk_id ==  "PACK") {
 			ifstream.ignore(4); // number of SIZE and XYZI chunks (model count)
@@ -681,27 +681,56 @@ void Application::create_command_buffers() {
 }
 
 void Application::create_voxels_shader_storage_buffer() {
-	constexpr auto AXIS_VOXELS_COUNT = 300u;
-	auto const buffer_size = AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * sizeof(vk::Bool32);
+	constexpr auto OCTREE_DEPTH = 9u;
+	struct OctreeNode {
+		uint32_t is_leaf : 1 = 0u;
+		uint32_t children_mask : 8 = 0u; // 1 0 0 -> 0b1, 0 0 1 -> 0b10, 0 1 0 -> 0b1000
+		uint32_t first_child_index : 23 = 0u;
+	};
+	auto nodes = std::vector<OctreeNode>{ 1u };
 
+	auto const vox_path = get_asset_path("vox/teapot.vox");
+	auto const has_import_succeed = import_vox(vox_path, [&nodes](glm::ivec3 const& position) {
+		auto half_size = (1 << (OCTREE_DEPTH - 1)) / 2;
+		auto post_center = glm::ivec3{ half_size };
+		auto node = std::begin(nodes);
+		for (auto i = 1u; i < OCTREE_DEPTH; ++i) {
+			auto child_index = 0;
+			if (position.x >= post_center.x) {
+				child_index |= 1;
+			}
+			if (position.y >= post_center.y) {
+				child_index |= 4;
+			}
+			if (position.z >= post_center.z) {
+				child_index |= 2;
+			}
+			half_size /= 2;
+			post_center += half_size * (glm::ivec3{ (child_index & 1) * 2, (child_index & 4) / 2, child_index & 2 } - 1);
+
+			node->children_mask |= (1u << child_index);
+			child_index += node->first_child_index;
+			if (node->first_child_index == 0u) {
+				node->first_child_index = std::size(nodes);
+				child_index += node->first_child_index;
+				nodes.resize(std::size(nodes) + 8u);
+			}
+			node = std::begin(nodes) + child_index;
+		}
+		node->is_leaf = 1u;
+	});
+	if (!has_import_succeed) {
+		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
+	}
+	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	auto const data = reinterpret_cast<vk::Bool32*>(staging_buffer_memory.mapMemory(0u, buffer_size));
-
-	std::fill_n(data, AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT, vk::False);
-	auto const vox_path = get_asset_path("vox/teapot.vox");
-	auto const has_import_succeed = import_vox(vox_path, [data](glm::ivec3 position) {
-		auto const index = position.y * AXIS_VOXELS_COUNT * AXIS_VOXELS_COUNT + position.z * AXIS_VOXELS_COUNT + position.x;
-		data[index] = vk::True;
-	});
+	auto* const data = reinterpret_cast<OctreeNode*>(staging_buffer_memory.mapMemory(0u, buffer_size));
+	std::ranges::copy(nodes, data);
 	staging_buffer_memory.unmapMemory();
-	if (!has_import_succeed) {
-		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"'};
-	}
 
-	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
-		vk::MemoryPropertyFlagBits::eDeviceLocal);
-
+	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
 	copy_buffer(staging_buffer, m_voxels_storage_buffer, buffer_size);
 }
 

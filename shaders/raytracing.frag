@@ -8,16 +8,15 @@ bool is_leaf(OctreeNode node) {
 	return (node.bits & 1u) == 1u;
 }
 
-uint children_mask(OctreeNode node) {
+uint octants_mask(OctreeNode node) {
 	return (node.bits << 23u) >> 24u;
 }
 
-uint first_child_index(OctreeNode node) {
+uint first_octant_node_index(OctreeNode node) {
 	return node.bits >> 9u;
 }
 
-const uint OCTREE_DEPTH = 9u;
-const uint STACK_LENGTH = OCTREE_DEPTH - 1u;
+const uint OCTREE_DEPTH = 8u;
 
 struct StackElem {
 	uint octants_intesection_mask;
@@ -48,7 +47,7 @@ layout(location = 0) out vec4 out_color;
 
 Ray compute_ray() {
 	Ray ray;
-	ray.position = u_camera_position / float(exp2(OCTREE_DEPTH - 1u)) + 1.f;
+	ray.position = u_camera_position / float(exp2(OCTREE_DEPTH)) + 1.f;
 	ray.direction = normalize(v_ray_direction);
 	// Get rid of small ray direction components to avoid division by zero.
 	const float epsilon = exp2(-23.f);
@@ -129,10 +128,10 @@ uint compute_octants_intesection_mask(const Ray ray, const vec3 node_min, const 
 }
 
 uint compute_current_octant_index(const OctreeNode node, inout StackElem stack_elem, const uint first_octant_index) {
-	const uint children_mask = children_mask(node);
+	const uint octants_mask = octants_mask(node);
 	while (stack_elem.checked_octant_count < 8u) {
 		const uint current_octant_index = stack_elem.checked_octant_count ^ first_octant_index;
-		if ((children_mask & (1u << current_octant_index)) != 0u && (stack_elem.octants_intesection_mask & (1u << current_octant_index)) != 0u) {
+		if ((octants_mask & (1u << current_octant_index)) != 0u && (stack_elem.octants_intesection_mask & (1u << current_octant_index)) != 0u) {
 			return current_octant_index;
 		}
 		stack_elem.checked_octant_count += 1u;
@@ -164,9 +163,9 @@ vec3 compute_color(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
 void main() {
 	Ray ray = compute_ray();
 	const uint first_octant_index = compute_first_octant_index(ray.direction);
-	uint stack_index = 0u;
-	StackElem stack[STACK_LENGTH];
+	StackElem stack[OCTREE_DEPTH];
 	stack[0] = StackElem(compute_octants_intesection_mask(ray, vec3(1.f), vec3(2.f)), 0u, 0u, vec3(1.f));
+	uint stack_index = 0u;
 
 	uint iter = 0u;
 	while (iter < 1000u) {
@@ -174,7 +173,6 @@ void main() {
 
 		const OctreeNode node = b_octree_nodes[stack[stack_index].node_index];
 		const uint current_octant_index = compute_current_octant_index(node, stack[stack_index], first_octant_index);
-
 		if (current_octant_index == 8u) {
 			// POP
 			if (stack_index == 0u) {
@@ -184,24 +182,16 @@ void main() {
 			stack[stack_index].checked_octant_count += 1u;
 			continue;
 		}
-
 		const float octant_size = exp2(-float(stack_index + 1u));
 		const vec3 octant_min = stack[stack_index].node_min + octant_size
 			* vec3(float(current_octant_index & 1u), float((current_octant_index & 4u) >> 2u), float((current_octant_index & 2u) >> 1u));
-
-		const uint first_child_index = first_child_index(node);
-		const OctreeNode child = b_octree_nodes[first_child_index + current_octant_index];
-		if (is_leaf(child)) {
+		if (is_leaf(node)) {
 			out_color = vec4(compute_color(ray, octant_min, octant_min + octant_size), 1.f);
 			return;
 		}
-		if (stack_index >= STACK_LENGTH - 1u) {
-			stack[stack_index].checked_octant_count += 1u;
-			continue;
-		}
 		stack_index += 1u;
 		stack[stack_index] = StackElem(compute_octants_intesection_mask(ray, octant_min, octant_min + octant_size),
-			0u, first_child_index + current_octant_index, octant_min);
+			0u, first_octant_node_index(node) + current_octant_index, octant_min);
 	}
 	out_color = vec4(0.f, 0.f, 0.f, 1.f);
 }

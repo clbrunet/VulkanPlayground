@@ -681,43 +681,47 @@ void Application::create_command_buffers() {
 }
 
 void Application::create_voxels_shader_storage_buffer() {
-	constexpr auto OCTREE_DEPTH = 9u;
+	constexpr auto OCTREE_DEPTH = 8u;
 	struct OctreeNode {
 		uint32_t is_leaf : 1 = 0u;
-		uint32_t children_mask : 8 = 0u; // 1 0 0 -> 0b1, 0 0 1 -> 0b10, 0 1 0 -> 0b1000
-		uint32_t first_child_index : 23 = 0u;
+		uint32_t octants_mask : 8 = 0u; // 1 0 0 -> 0b1, 0 0 1 -> 0b10, 0 1 0 -> 0b1000
+		uint32_t first_octant_node_index : 23 = 0u;
 	};
 	auto nodes = std::vector<OctreeNode>{ 1u };
 
 	auto const vox_path = get_asset_path("vox/teapot.vox");
 	auto const has_import_succeed = import_vox(vox_path, [&nodes](glm::ivec3 const& position) {
-		auto half_size = (1 << (OCTREE_DEPTH - 1)) / 2;
+		auto half_size = (1 << OCTREE_DEPTH) / 2;
 		auto post_center = glm::ivec3{ half_size };
 		auto node = std::begin(nodes);
-		for (auto i = 1u; i < OCTREE_DEPTH; ++i) {
-			auto child_index = 0;
+		auto i = 1u;
+		while (true) {
+			auto octant_index = 0;
 			if (position.x >= post_center.x) {
-				child_index |= 1;
+				octant_index |= 1;
 			}
 			if (position.y >= post_center.y) {
-				child_index |= 4;
+				octant_index |= 4;
 			}
 			if (position.z >= post_center.z) {
-				child_index |= 2;
+				octant_index |= 2;
+			}
+			node->octants_mask |= (1u << octant_index);
+			if (i == OCTREE_DEPTH) {
+				node->is_leaf = 1u;
+				break;
 			}
 			half_size /= 2;
-			post_center += half_size * (glm::ivec3{ (child_index & 1) * 2, (child_index & 4) / 2, child_index & 2 } - 1);
-
-			node->children_mask |= (1u << child_index);
-			child_index += node->first_child_index;
-			if (node->first_child_index == 0u) {
-				node->first_child_index = std::size(nodes);
-				child_index += node->first_child_index;
+			post_center += half_size * (glm::ivec3{ (octant_index & 1) * 2, (octant_index & 4) / 2, octant_index & 2 } - 1);
+			octant_index += node->first_octant_node_index;
+			if (node->first_octant_node_index == 0u) {
+				node->first_octant_node_index = std::size(nodes);
+				octant_index += node->first_octant_node_index;
 				nodes.resize(std::size(nodes) + 8u);
 			}
-			node = std::begin(nodes) + child_index;
+			node = std::begin(nodes) + octant_index;
+			i += 1u;
 		}
-		node->is_leaf = 1u;
 	});
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };

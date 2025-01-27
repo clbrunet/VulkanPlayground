@@ -15,7 +15,7 @@ public:
 
 private:
 	static constexpr float DEGREE_PER_INPUT_SENSITIVITY = 0.25f;
-	static constexpr float BASE_SPEED = 30.0f;
+	static constexpr float BASE_SPEED = 80.0f;
 
 	glm::vec3 m_position;
 	float m_pitch = 0.0f;

@@ -1,4 +1,8 @@
 #include "Application.hpp"
+#include "vox.hpp"
+
+#include <glm/ext/scalar_common.hpp>
+#include <glm/gtc/integer.hpp>
 
 #include <iostream>
 #include <set>
@@ -12,6 +16,8 @@
 #include <format>
 #include <execution>
 #include <filesystem>
+#include <bit>
+#include <concepts>
 
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
@@ -21,6 +27,7 @@ struct PushConstants {
 	glm::vec3 camera_position;
 	float aspect_ratio;
 	glm::mat3x4 camera_rotation;
+	uint32_t octree_depth;
 };
 
 static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
@@ -43,63 +50,6 @@ static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::pat
 	ifstream.seekg(0);
 	ifstream.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
 	return std::make_optional(std::move(bytes));
-}
-
-template<typename T>
-concept ImportVoxel = requires(T func) {
-	func(glm::ivec3{});
-};
-
-[[nodiscard]]
-static bool import_vox(std::filesystem::path const& path, ImportVoxel auto import_voxel) {
-	auto ifstream = std::ifstream{ path, std::ios::binary };
-	if (!ifstream) {
-		return false;
-	}
-
-	// format : https://github.com/ephtracy/voxel-model/tree/master
-	ifstream.ignore(4); // "VOX "
-	ifstream.ignore(4); // version
-	ifstream.ignore(4); // MAIN chunk id
-	ifstream.ignore(4); // chunk content size (0 for MAIN)
-	ifstream.ignore(4); // children chunks size
-
-	while (ifstream.good()) {
-		auto chunk_id_letters = std::array<char, 4u>{};
-		ifstream.read(std::data(chunk_id_letters), 4);
-		auto const chunk_id = std::string_view{ std::data(chunk_id_letters), std::size(chunk_id_letters) };
-		auto chunk_content_size = int32_t{};
-		ifstream.read(reinterpret_cast<char*>(&chunk_content_size), sizeof(chunk_content_size));
-		auto children_chunks_size = int32_t{};
-		ifstream.read(reinterpret_cast<char*>(&children_chunks_size), sizeof(children_chunks_size));
-
-		if (chunk_id == "SIZE") {
-			ifstream.ignore(4); // size x
-			ifstream.ignore(4); // size y
-			ifstream.ignore(4); // size z
-		} else if (chunk_id ==  "XYZI") {
-			auto voxel_count = int32_t{};
-			ifstream.read(reinterpret_cast<char*>(&voxel_count), sizeof(voxel_count));
-			for (auto i = 0; i < voxel_count; ++i) {
-				auto x = uint8_t{};
-				ifstream.read(reinterpret_cast<char*>(&x), sizeof(x));
-				auto y = uint8_t{};
-				ifstream.read(reinterpret_cast<char*>(&y), sizeof(y));
-				auto z = uint8_t{};
-				ifstream.read(reinterpret_cast<char*>(&z), sizeof(z));
-				ifstream.ignore(1); // palette index
-				import_voxel(glm::ivec3{ x, z, y }); // vox uses a x right, z up and y forward coordinates system
-			}
-		} else if (chunk_id ==  "PACK") {
-			ifstream.ignore(4); // number of SIZE and XYZI chunks (model count)
-		} else if (chunk_id ==  "RGBA") {
-			ifstream.ignore(4ll * 256ll); // palette
-		} else {
-			std::cerr << "Warning : " << path << " contains unsupported chunk id \"" << chunk_id << '"' << std::endl;
-			ifstream.ignore(chunk_content_size + children_chunks_size);
-		}
-	}
-	return true;
 }
 
 Application::Application() {
@@ -681,7 +631,6 @@ void Application::create_command_buffers() {
 }
 
 void Application::create_voxels_shader_storage_buffer() {
-	constexpr auto OCTREE_DEPTH = 8u;
 	struct OctreeNode {
 		uint32_t is_leaf : 1 = 0u;
 		uint32_t octants_mask : 8 = 0u; // 1 0 0 -> 0b1, 0 0 1 -> 0b10, 0 1 0 -> 0b1000
@@ -689,9 +638,11 @@ void Application::create_voxels_shader_storage_buffer() {
 	};
 	auto nodes = std::vector<OctreeNode>{ 1u };
 
-	auto const vox_path = get_asset_path("vox/teapot.vox");
-	auto const has_import_succeed = import_vox(vox_path, [&nodes](glm::ivec3 const& position) {
-		auto half_size = (1 << OCTREE_DEPTH) / 2;
+	auto const vox_path = get_asset_path("vox/sponza.vox");
+	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
+		m_octree_depth = glm::log2(std::bit_ceil(glm::max(vox_full_size.x, vox_full_size.y, vox_full_size.z)));
+	}, [&](glm::ivec3 const& position) {
+		auto half_size = (1 << m_octree_depth) / 2;
 		auto post_center = glm::ivec3{ half_size };
 		auto node = std::begin(nodes);
 		auto i = 1u;
@@ -707,7 +658,7 @@ void Application::create_voxels_shader_storage_buffer() {
 				octant_index |= 2;
 			}
 			node->octants_mask |= (1u << octant_index);
-			if (i == OCTREE_DEPTH) {
+			if (i == m_octree_depth) {
 				node->is_leaf = 1u;
 				break;
 			}
@@ -715,7 +666,7 @@ void Application::create_voxels_shader_storage_buffer() {
 			post_center += half_size * (glm::ivec3{ (octant_index & 1) * 2, (octant_index & 4) / 2, octant_index & 2 } - 1);
 			octant_index += node->first_octant_node_index;
 			if (node->first_octant_node_index == 0u) {
-				node->first_octant_node_index = std::size(nodes);
+				node->first_octant_node_index = std::size(nodes) & 0x7FFFFFu;
 				octant_index += node->first_octant_node_index;
 				nodes.resize(std::size(nodes) + 8u);
 			}
@@ -888,6 +839,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 		.camera_position = m_camera.position(),
 		.aspect_ratio = viewport.width / viewport.height,
 		.camera_rotation = m_camera.rotation(),
+		.octree_depth = m_octree_depth,
 	};
 	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
 	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0u, *m_descriptor_sets[m_current_in_flight_frame_index], {});
@@ -1078,7 +1030,7 @@ uint32_t Application::find_memory_type(uint32_t const type_bits, vk::MemoryPrope
 	throw std::runtime_error{ message };
 }
 
-void Application::one_time_commands(CommandsRecorder auto commands_recorder) const {
+void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto commands_recorder) const {
 	auto const command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
 		.commandPool = m_command_pool,
 		.level = vk::CommandBufferLevel::ePrimary,

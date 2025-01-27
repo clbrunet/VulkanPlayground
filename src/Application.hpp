@@ -11,11 +11,6 @@
 #include <array>
 #include <cstdint>
 
-template<typename T>
-concept CommandsRecorder = requires(T func) {
-	func(vk::CommandBuffer{});
-};
-
 class Application {
 public:
 	Application();
@@ -93,7 +88,7 @@ private:
 
 	uint32_t find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags property_flags) const;
 
-	void one_time_commands(CommandsRecorder auto commands_recorder) const;
+	void one_time_commands(std::invocable<vk::CommandBuffer> auto commands_recorder) const;
 
 private:
 	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -136,5 +131,6 @@ private:
 	std::vector<vk::raii::Fence> m_in_flight_fences;
 	uint8_t m_current_in_flight_frame_index = 0u;
 
-	Camera m_camera = Camera{ glm::vec3{ 0.f, 0.f, -20.f }, glm::vec2{ 0.f, 0.f } };
+	Camera m_camera = Camera{ glm::vec3{ 0.f, 20.f, -20.f }, glm::vec2{ 0.f, 0.f } };
+	uint32_t m_octree_depth;
 };

@@ -16,7 +16,7 @@ uint first_octant_node_index(OctreeNode node) {
 	return node.bits >> 9u;
 }
 
-const uint OCTREE_DEPTH = 8u;
+const uint MAX_OCTREE_DEPTH = 15u;
 
 struct StackElem {
 	uint octants_intesection_mask;
@@ -39,6 +39,7 @@ layout(push_constant) uniform PushConstants {
 	vec3 u_camera_position;
 	float u_aspect_ratio;
 	mat3 u_camera_rotation;
+	uint u_octree_depth;
 };
 
 layout(location = 0) in vec3 v_ray_direction;
@@ -47,7 +48,7 @@ layout(location = 0) out vec4 out_color;
 
 Ray compute_ray() {
 	Ray ray;
-	ray.position = u_camera_position / float(exp2(OCTREE_DEPTH)) + 1.f;
+	ray.position = u_camera_position / float(exp2(u_octree_depth)) + 1.f;
 	ray.direction = normalize(v_ray_direction);
 	// Get rid of small ray direction components to avoid division by zero.
 	const float epsilon = exp2(-23.f);
@@ -163,7 +164,7 @@ vec3 compute_color(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
 void main() {
 	Ray ray = compute_ray();
 	const uint first_octant_index = compute_first_octant_index(ray.direction);
-	StackElem stack[OCTREE_DEPTH];
+	StackElem stack[MAX_OCTREE_DEPTH];
 	stack[0] = StackElem(compute_octants_intesection_mask(ray, vec3(1.f), vec3(2.f)), 0u, 0u, vec3(1.f));
 	uint stack_index = 0u;
 
@@ -174,7 +175,6 @@ void main() {
 		const OctreeNode node = b_octree_nodes[stack[stack_index].node_index];
 		const uint current_octant_index = compute_current_octant_index(node, stack[stack_index], first_octant_index);
 		if (current_octant_index == 8u) {
-			// POP
 			if (stack_index == 0u) {
 				break;
 			}

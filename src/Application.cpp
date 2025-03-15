@@ -1,5 +1,6 @@
 #include "Application.hpp"
 #include "vox.hpp"
+#include "Octree.hpp"
 
 #include <glm/ext/scalar_common.hpp>
 #include <glm/gtc/integer.hpp>
@@ -631,57 +632,32 @@ void Application::create_command_buffers() {
 }
 
 void Application::create_voxels_shader_storage_buffer() {
-	struct OctreeNode {
-		uint32_t is_leaf : 1 = 0u;
-		uint32_t octants_mask : 8 = 0u; // 1 0 0 -> 0b1, 0 0 1 -> 0b10, 0 1 0 -> 0b1000
-		uint32_t first_octant_node_index : 23 = 0u;
-	};
-	auto nodes = std::vector<OctreeNode>{ 1u };
-
+	auto octree = std::unique_ptr<Octree>{};
 	auto const vox_path = get_asset_path("vox/sponza.vox");
+	auto voxel_count = 0ull;
 	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
 		m_octree_depth = glm::log2(std::bit_ceil(glm::max(vox_full_size.x, vox_full_size.y, vox_full_size.z)));
-	}, [&](glm::ivec3 const& position) {
-		auto half_size = (1 << m_octree_depth) / 2;
-		auto post_center = glm::ivec3{ half_size };
-		auto node = std::begin(nodes);
-		auto i = 1u;
-		while (true) {
-			auto octant_index = 0;
-			if (position.x >= post_center.x) {
-				octant_index |= 1;
-			}
-			if (position.y >= post_center.y) {
-				octant_index |= 4;
-			}
-			if (position.z >= post_center.z) {
-				octant_index |= 2;
-			}
-			node->octants_mask |= (1u << octant_index);
-			if (i == m_octree_depth) {
-				node->is_leaf = 1u;
-				break;
-			}
-			half_size /= 2;
-			post_center += half_size * (glm::ivec3{ (octant_index & 1) * 2, (octant_index & 4) / 2, octant_index & 2 } - 1);
-			octant_index += node->first_octant_node_index;
-			if (node->first_octant_node_index == 0u) {
-				node->first_octant_node_index = std::size(nodes) & 0x7FFFFFu;
-				octant_index += node->first_octant_node_index;
-				nodes.resize(std::size(nodes) + 8u);
-			}
-			node = std::begin(nodes) + octant_index;
-			i += 1u;
+		if (m_octree_depth > Octree::MAX_DEPTH) {
+			return false;
+		}
+		octree = std::make_unique<Octree>(m_octree_depth);
+		return true;
+	}, [&](glm::uvec3 const& voxel) {
+		octree->add_voxel(voxel);
+		voxel_count += 1u;
+		if (voxel_count % 10'000'000u == 0u) {
+			octree->shrink();
 		}
 	});
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
 	}
-	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
+	octree->shrink();
+	auto const buffer_size = std::size(octree->nodes()) * sizeof(octree->nodes()[0]);
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	auto* const data = reinterpret_cast<OctreeNode*>(staging_buffer_memory.mapMemory(0u, buffer_size));
-	std::ranges::copy(nodes, data);
+	std::ranges::copy(octree->nodes(), data);
 	staging_buffer_memory.unmapMemory();
 
 	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size,

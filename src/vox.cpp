@@ -88,7 +88,8 @@ struct Node {
 	}
 };
 
-bool import_vox(std::filesystem::path const& path, std::function<void(glm::uvec3 const&)> const vox_full_size_importer, std::function<void(glm::ivec3 const&)> const voxel_importer) {
+bool import_vox(std::filesystem::path const& path, std::function<bool(glm::uvec3 const&)> const vox_full_size_importer,
+	std::function<void(glm::uvec3 const&)> const voxel_importer) {
 	auto ifstream = std::ifstream{ path, std::ios::binary };
 	if (!ifstream) {
 		return false;
@@ -205,13 +206,19 @@ bool import_vox(std::filesystem::path const& path, std::function<void(glm::uvec3
 	};
 	parse_nodes(parse_nodes, root_node);
 
-	vox_full_size_importer(voxel_end - voxel_begin);
+	if (!vox_full_size_importer(voxel_end - voxel_begin)) {
+		return false;
+	}
 
 	auto model_id = int32_t{ 0 };
 	for_each_chunks([&](std::string_view const chunk_id) {
 		if (chunk_id != "XYZI") {
 			return false;
 		}
+		auto const model_transforms_range = [&]() {
+			auto const [begin, end] = model_transforms.equal_range(model_id);
+			return std::ranges::subrange{ begin, end };
+		}();
 		auto const voxel_count = read<int32_t>(ifstream);
 		for (auto i = 0; i < voxel_count; ++i) {
 			auto const x = read<uint8_t>(ifstream);
@@ -219,15 +226,14 @@ bool import_vox(std::filesystem::path const& path, std::function<void(glm::uvec3
 			auto const z = read<uint8_t>(ifstream);
 			ifstream.ignore(sizeof(uint8_t)); // palette index
 
-			auto const [begin, end] = model_transforms.equal_range(model_id);
-			for (auto const& [_, model_transform] : std::ranges::subrange{ begin, end }) {
+			for (auto const& [_, model_transform] : model_transforms_range) {
 				auto const position = glm::ivec3{ model_transform[3] } - voxel_begin;
 				auto const voxel = glm::ivec3{ // vox uses a x right, z up and y forward coordinates system
 					model_transform[0][0] * x + model_transform[1][0] * z + model_transform[2][0] * y,
 					model_transform[0][1] * x + model_transform[1][1] * z + model_transform[2][1] * y,
 					model_transform[0][2] * x + model_transform[1][2] * z + model_transform[2][2] * y,
 				};
-				voxel_importer(position + voxel);
+				voxel_importer(glm::uvec3{ position + voxel });
 			}
 		}
 		model_id += 1u;

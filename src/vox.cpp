@@ -210,6 +210,14 @@ bool import_vox(std::filesystem::path const& path, std::function<bool(glm::uvec3
 		return false;
 	}
 
+	for (auto& [_, model_transform] : model_transforms) {
+		model_transform[3] -= glm::ivec4{ voxel_begin, 0 };
+		// substract 1 when a coordinate start from the past-the-end
+		model_transform[3][0] -= (model_transform[0][0] + model_transform[1][0] + model_transform[2][0] - 1) / -2;
+		model_transform[3][1] -= (model_transform[0][1] + model_transform[1][1] + model_transform[2][1] - 1) / -2;
+		model_transform[3][2] -= (model_transform[0][2] + model_transform[1][2] + model_transform[2][2] - 1) / -2;
+	}
+
 	auto model_id = int32_t{ 0 };
 	for_each_chunks([&](std::string_view const chunk_id) {
 		if (chunk_id != "XYZI") {
@@ -227,13 +235,12 @@ bool import_vox(std::filesystem::path const& path, std::function<bool(glm::uvec3
 			ifstream.ignore(sizeof(uint8_t)); // palette index
 
 			for (auto const& [_, model_transform] : model_transforms_range) {
-				auto const position = glm::ivec3{ model_transform[3] } - voxel_begin;
-				auto const voxel = glm::ivec3{ // vox uses a x right, z up and y forward coordinates system
+				auto const voxel = glm::ivec3{ model_transform[3] } + glm::ivec3{
 					model_transform[0][0] * x + model_transform[1][0] * z + model_transform[2][0] * y,
 					model_transform[0][1] * x + model_transform[1][1] * z + model_transform[2][1] * y,
 					model_transform[0][2] * x + model_transform[1][2] * z + model_transform[2][2] * y,
 				};
-				voxel_importer(glm::uvec3{ position + voxel });
+				voxel_importer(glm::uvec3{ voxel });
 			}
 		}
 		model_id += 1u;

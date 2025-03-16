@@ -76,7 +76,7 @@ void Octree::shrink() {
 		}
 		if (node.first_octant_node_index != 0u) {
 			auto const distance = std::distance(std::begin(indices_to_erase), std::ranges::upper_bound(indices_to_erase, node.first_octant_node_index));
-			node.first_octant_node_index -= 8u * static_cast<uint32_t>(distance);
+			node.first_octant_node_index -= (8u * static_cast<uint32_t>(distance)) & 0x7FFFFFu;
 		}
 		index += 1u;
 		return false;

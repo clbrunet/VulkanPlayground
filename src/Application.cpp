@@ -58,63 +58,19 @@ Application::Application() {
 	init_vulkan();
 }
 
-Application::~Application() {
-	glfwDestroyWindow(m_window);
-	glfwTerminate();
-}
-
 void Application::run() {
-	auto const get_cursor_position = [&] {
-		double xpos, ypos;
-		glfwGetCursorPos(m_window, &xpos, &ypos);
-		return glm::vec2{ xpos, ypos };
-	};
-	glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-	auto last_cursor_position = get_cursor_position();
-	auto last_time = float{ 0.0f };
-	glfwSetTime(0.0);
-
-	while (!glfwWindowShouldClose(m_window)) {
-		auto const current_time = static_cast<float>(glfwGetTime());
-		auto const time_delta = current_time - last_time;
-		last_time = current_time;
-		auto const cursor_position = get_cursor_position();
-		auto const cursor_delta = cursor_position - last_cursor_position;
-		last_cursor_position = cursor_position;
-
-		m_camera.update(*m_window, time_delta, cursor_delta);
+	m_window.prepare_event_loop();
+	while (!m_window.should_close()) {
+		m_camera.update(m_window);
 		draw_frame();
-		glfwPollEvents();
+		m_window.poll_events();
 	}
 	m_device.waitIdle();
 }
 
-void Application::set_has_window_been_resized() {
-	m_should_recreate_swapchain = true;
-}
-
 void Application::init_window() {
-	glfwInit();
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-	constexpr auto WIDTH = 1280u;
-	constexpr auto HEIGHT = 720u;
-	m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Playground", nullptr, nullptr);
-	if (!m_window) {
-		throw std::runtime_error{ "glfwCreateWindow" };
-	}
-
-	glfwSetWindowUserPointer(m_window, this);
-	glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* const window,
-		[[maybe_unused]] int const width, [[maybe_unused]] int const height) noexcept {
-			reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))->set_has_window_been_resized();
-	});
-
-	glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key,
-		[[maybe_unused]] int const scancode, int const action, [[maybe_unused]] int const mods) noexcept {
-			if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-				glfwSetWindowShouldClose(window, true);
-			}
+	m_window.set_framebuffer_callback([&]([[maybe_unused]] uint16_t const width, [[maybe_unused]] uint16_t const height) {
+		m_should_recreate_swapchain = true;
 	});
 }
 
@@ -227,11 +183,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debug_utils_messenger_callback(
 }
 
 void Application::create_surface() {
-	auto surface = VkSurfaceKHR{};
-	if (glfwCreateWindowSurface(*m_instance, m_window, nullptr, &surface) != VK_SUCCESS) {
-		throw std::runtime_error{ "glfwCreateWindowSurface" };
-	}
-	m_surface = vk::raii::SurfaceKHR{ m_instance, surface };
+	m_surface = vk::raii::SurfaceKHR{ m_instance, m_window.create_surface(*m_instance) };
 }
 
 void Application::select_physical_device() {
@@ -369,13 +321,12 @@ void Application::create_swapchain() {
 		if (surface_capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
 			return surface_capabilities.currentExtent;
 		}
-		auto width = int{};
-		auto height = int{};
-		glfwGetFramebufferSize(m_window, &width, &height);
+		auto const framebuffer_dimensions = m_window.framebuffer_dimensions();
 		return vk::Extent2D{
-			.width = std::clamp(static_cast<uint32_t>(width), surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width),
-			.height = std::clamp(static_cast<uint32_t>(height), surface_capabilities.minImageExtent.height,
-				surface_capabilities.maxImageExtent.height),
+			.width = std::clamp(static_cast<uint32_t>(framebuffer_dimensions.x),
+				surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width),
+			.height = std::clamp(static_cast<uint32_t>(framebuffer_dimensions.y),
+				surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height),
 		};
 	}();
 
@@ -826,13 +777,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 }
 
 void Application::recreate_swapchain() {
-	auto width = int{};
-	auto height = int{};
-	glfwGetFramebufferSize(m_window, &width, &height);
-	while (width == 0 || height == 0) {
-		glfwWaitEvents();
-		glfwGetFramebufferSize(m_window, &width, &height);
-	}
+	m_window.wait_for_valid_framebuffer();
 	m_device.waitIdle();
 
 	clean_swapchain();

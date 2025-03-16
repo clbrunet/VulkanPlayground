@@ -88,7 +88,8 @@ struct Node {
 	}
 };
 
-bool import_vox(std::filesystem::path const& path, std::function<bool(glm::uvec3 const&)> const vox_full_size_importer,
+bool import_vox(std::filesystem::path const& path,
+	std::function<bool(glm::uvec3 const&)> const vox_full_size_importer,
 	std::function<void(glm::uvec3 const&)> const voxel_importer) {
 	auto ifstream = std::ifstream{ path, std::ios::binary };
 	if (!ifstream) {

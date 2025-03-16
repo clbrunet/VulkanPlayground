@@ -1,8 +1,8 @@
 #pragma once
 
+#include "Window.hpp"
 #include "Camera.hpp"
 
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
 
@@ -15,13 +15,10 @@ class Application {
 public:
 	Application();
 	Application(Application const&) = delete;
-	~Application();
 
 	Application& operator=(Application const&) = delete;
 
 	void run();
-
-	void set_has_window_been_resized();
 
 private:
 	void init_window();
@@ -93,7 +90,7 @@ private:
 private:
 	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
 
-	GLFWwindow* m_window;
+	Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
 	bool m_should_recreate_swapchain = false;
 	vk::raii::Context m_context;
 	vk::raii::Instance m_instance = { nullptr };

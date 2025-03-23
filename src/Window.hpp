@@ -32,6 +32,7 @@ public:
 	[[nodiscard]] bool is_key_pressed(int key) const;
 
 	[[nodiscard]] bool is_mouse_button_pressed(int button) const;
+	[[nodiscard]] float scroll_delta() const;
 
 	[[nodiscard]] glm::vec2 cursor_position() const;
 	void set_cursor_visibility(bool cursor_visibility) const;
@@ -44,4 +45,5 @@ private:
 	float m_delta_time = 0.f;
 	glm::vec2 m_last_cursor_position = glm::vec2{ 0.f };
 	glm::vec2 m_cursor_delta = glm::vec2{ 0.f };
+	float m_scroll_delta = 0.f;
 };

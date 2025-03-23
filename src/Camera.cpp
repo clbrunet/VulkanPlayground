@@ -3,6 +3,7 @@
 #include <glm/gtx/euler_angles.hpp>
 
 #include <numbers>
+#include <iostream>
 
 Camera::Camera(glm::vec3 const& position, glm::vec2 euler_angles) :
 	m_position{ position },
@@ -20,6 +21,7 @@ glm::mat3 const& Camera::rotation() const {
 }
 
 void Camera::update(Window const& window) {
+	m_speed *= glm::pow(1.1f, window.scroll_delta());
 	update_position(window);
 	update_rotation(window);
 }
@@ -41,7 +43,7 @@ void Camera::update_position(Window const& window) {
 	if (window.is_key_pressed(GLFW_KEY_LEFT_ALT)) {
 		speed_modifier /= 2.f;
 	}
-	m_position += window.delta_time() * BASE_SPEED * speed_modifier * (m_rotation * glm::normalize(direction));
+	m_position += window.delta_time() * m_speed * speed_modifier * (m_rotation * glm::normalize(direction));
 }
 
 void Camera::update_rotation(Window const& window) {

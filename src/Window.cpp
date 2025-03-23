@@ -27,6 +27,10 @@ Window::Window(char const* const title, uint16_t const width, uint16_t const hei
 		}
 	});
 
+	glfwSetScrollCallback(m_window, [](GLFWwindow* const window, [[maybe_unused]] double const xoffset, double const yoffset) noexcept {
+		reinterpret_cast<Window*>(glfwGetWindowUserPointer(window))->m_scroll_delta = static_cast<float>(yoffset);
+	});
+
 	if (glfwRawMouseMotionSupported()) {
 		glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 	}
@@ -71,6 +75,7 @@ bool Window::should_close() const {
 }
 
 void Window::poll_events() {
+	m_scroll_delta = 0.f;
 	glfwPollEvents();
 	auto const time = this->time();
 	m_delta_time = time - m_last_time;
@@ -114,6 +119,10 @@ bool Window::is_key_pressed(int const key) const {
 
 bool Window::is_mouse_button_pressed(int const button) const {
 	return glfwGetMouseButton(m_window, button) == GLFW_PRESS;
+}
+
+float Window::scroll_delta() const {
+	return m_scroll_delta;
 }
 
 glm::vec2 Window::cursor_position() const {

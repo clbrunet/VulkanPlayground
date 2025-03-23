@@ -17,12 +17,12 @@ public:
 
 private:
 	static constexpr float DEGREE_PER_INPUT_SENSITIVITY = 0.25f;
-	static constexpr float BASE_SPEED = 80.0f;
 
 	glm::vec3 m_position;
 	float m_pitch = 0.f;
 	float m_yaw = 0.f;
 	glm::mat3 m_rotation;
+	float m_speed = 80.f;
 
 	void update_position(Window const& window);
 	void update_rotation(Window const& window);

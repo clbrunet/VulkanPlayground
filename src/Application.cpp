@@ -215,8 +215,10 @@ uint32_t Application::get_physical_device_score(vk::PhysicalDevice const physica
 		}
 		queue_family_index += 1u;
 	}
-	if (!has_graphics_queue || !has_present_support
-		|| !has_device_extension(physical_device, vk::KHRSwapchainExtensionName)) {
+	auto const has_required_extensions = std::ranges::all_of(DEVICE_REQUIRED_EXTENSIONS, [&](char const* const extension_name) {
+		return has_device_extension(physical_device, extension_name);
+	});
+	if (!has_graphics_queue || !has_present_support || !has_required_extensions) {
 		return 0u;
 	}
 	auto score = 1u;
@@ -249,13 +251,11 @@ void Application::create_device() {
 		.depthClamp = vk::True,
 	};
 
-	auto const extensions = std::to_array({ vk::KHRSwapchainExtensionName });
-
 	auto create_info = vk::DeviceCreateInfo{
 		.queueCreateInfoCount = static_cast<uint32_t>(std::size(queue_create_infos)),
 		.pQueueCreateInfos = std::data(queue_create_infos),
-		.enabledExtensionCount = static_cast<uint32_t>(std::size(extensions)),
-		.ppEnabledExtensionNames = std::data(extensions),
+		.enabledExtensionCount = static_cast<uint32_t>(std::size(DEVICE_REQUIRED_EXTENSIONS)),
+		.ppEnabledExtensionNames = std::data(DEVICE_REQUIRED_EXTENSIONS),
 		.pEnabledFeatures = &features,
 	};
 #ifndef NDEBUG
@@ -585,7 +585,6 @@ void Application::create_command_buffers() {
 void Application::create_voxels_shader_storage_buffer() {
 	auto octree = std::unique_ptr<Octree>{};
 	auto const vox_path = get_asset_path("vox/sponza.vox");
-	auto voxel_count = 0ull;
 	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
 		m_octree_depth = glm::log2(std::bit_ceil(glm::max(vox_full_size.x, vox_full_size.y, vox_full_size.z)));
 		if (m_octree_depth > Octree::MAX_DEPTH) {
@@ -595,20 +594,16 @@ void Application::create_voxels_shader_storage_buffer() {
 		return true;
 	}, [&](glm::uvec3 const& voxel) {
 		octree->add_voxel(voxel);
-		voxel_count += 1u;
-		if (voxel_count % 10'000'000u == 0u) {
-			octree->shrink();
-		}
 	});
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
 	}
-	octree->shrink();
-	auto const buffer_size = std::size(octree->nodes()) * sizeof(octree->nodes()[0]);
+	auto nodes = octree->build_contiguous_nodes();
+	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	auto* const data = reinterpret_cast<OctreeNode*>(staging_buffer_memory.mapMemory(0u, buffer_size));
-	std::ranges::copy(octree->nodes(), data);
+	std::ranges::copy(nodes, data);
 	staging_buffer_memory.unmapMemory();
 
 	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size,

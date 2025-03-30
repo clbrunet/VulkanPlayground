@@ -97,6 +97,9 @@ private:
 	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = { nullptr };
 	vk::raii::SurfaceKHR m_surface = { nullptr };
 
+	constexpr static std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
+		vk::KHRSwapchainExtensionName,
+	});
 	vk::raii::PhysicalDevice m_physical_device = { nullptr };
 	vk::raii::Device m_device = { nullptr };
 	vk::raii::Queue m_graphics_queue = { nullptr };

@@ -131,6 +131,6 @@ private:
 	std::vector<vk::raii::Fence> m_in_flight_fences;
 	uint8_t m_current_in_flight_frame_index = 0u;
 
-	Camera m_camera = Camera{ glm::vec3{ 0.f, 20.f, -20.f }, glm::vec2{ 0.f, 0.f } };
+	Camera m_camera = Camera{ glm::vec3{ 900.21f, 601.345f, 800.01f }, glm::vec2{ glm::radians(89.5898f), 0.f } };
 	uint32_t m_octree_depth;
 };

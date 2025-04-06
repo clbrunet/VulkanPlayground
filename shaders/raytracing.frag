@@ -190,8 +190,9 @@ void main() {
 			return;
 		}
 		stack_index += 1u;
+		const uint octant_node_offset = bitCount((octants_mask(node) << (8u - current_octant_index)) & 0xFFu);
 		stack[stack_index] = StackElem(compute_octants_intesection_mask(ray, octant_min, octant_min + octant_size),
-			0u, first_octant_node_index(node) + current_octant_index, octant_min);
+			0u, first_octant_node_index(node) + octant_node_offset, octant_min);
 	}
 	out_color = vec4(0.f, 0.f, 0.f, 1.f);
 }

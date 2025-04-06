@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <bit>
 
 Octree::Octree(uint32_t depth) :
 	m_depth{ depth } {
@@ -59,9 +60,12 @@ std::vector<OctreeNode> Octree::build_contiguous_nodes() const {
 		auto octant_index = std::size(nodes);
 		if (!node.is_leaf) {
 			node.first_octant_node_index = std::size(nodes) & 0x7FFFFFu;
-			nodes.resize(std::size(nodes) + 8u);
+			nodes.resize(std::size(nodes) + std::popcount(node.octants_mask));
 		}
 		for (auto const& building_octant : building_node.octants) {
+			if (building_octant.octants_mask == 0u) {
+				continue;
+			}
 			self(self, building_octant, nodes[octant_index]);
 			octant_index += 1u;
 		}

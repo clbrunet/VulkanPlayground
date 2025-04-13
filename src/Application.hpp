@@ -88,7 +88,7 @@ private:
 	void one_time_commands(std::invocable<vk::CommandBuffer> auto commands_recorder) const;
 
 private:
-	constexpr static auto MAX_FRAMES_IN_FLIGHT = 2u;
+	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
 
 	Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
 	bool m_should_recreate_swapchain = false;
@@ -97,7 +97,7 @@ private:
 	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = { nullptr };
 	vk::raii::SurfaceKHR m_surface = { nullptr };
 
-	constexpr static std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
+	static constexpr std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
 		vk::KHRSwapchainExtensionName,
 	});
 	vk::raii::PhysicalDevice m_physical_device = { nullptr };
@@ -131,6 +131,6 @@ private:
 	std::vector<vk::raii::Fence> m_in_flight_fences;
 	uint8_t m_current_in_flight_frame_index = 0u;
 
-	Camera m_camera = Camera{ glm::vec3{ 900.21f, 601.345f, 800.01f }, glm::vec2{ glm::radians(89.5898f), 0.f } };
-	uint32_t m_octree_depth;
+	Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
+	uint8_t m_tree64_depth;
 };

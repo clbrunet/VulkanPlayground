@@ -35,6 +35,8 @@ if(MSVC)
     /wd4820 # 'bytes' bytes padding added after construct 'member_name'
     /wd4868 # compiler may not enforce left-to-right evaluation order in braced initializer list
     /wd5045 # Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
+    /wd6001 # disabled due to false positives # Using uninitialized memory 'variable'.
+    /wd28020 # disabled due to false positives # The expression 'expr' is not true at this call.
     /external:anglebrackets
     /external:W0
     /analyze:external-

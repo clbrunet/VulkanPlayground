@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <optional>
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>

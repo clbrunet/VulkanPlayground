@@ -101,8 +101,10 @@ glm::ivec2 Window::framebuffer_dimensions() const {
 }
 
 void Window::prepare_event_loop() {
-	m_last_time = time();
-	m_last_cursor_position = cursor_position();
+	poll_events();
+	m_delta_time = 0.f;
+	m_scroll_delta = 0.f;
+	m_cursor_delta = glm::vec2{ 0.f };
 }
 
 float Window::time() const {

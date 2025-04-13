@@ -1,6 +1,6 @@
 #include "Application.hpp"
 #include "vox.hpp"
-#include "Octree.hpp"
+#include "Tree64.hpp"
 
 #include <glm/ext/scalar_common.hpp>
 #include <glm/gtc/integer.hpp>
@@ -8,17 +8,16 @@
 #include <iostream>
 #include <set>
 #include <algorithm>
-#include <ranges>
 #include <limits>
 #include <functional>
 #include <fstream>
 #include <optional>
 #include <span>
 #include <format>
-#include <execution>
 #include <filesystem>
 #include <bit>
 #include <concepts>
+#include <chrono>
 
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
@@ -28,7 +27,7 @@ struct PushConstants {
 	glm::vec3 camera_position;
 	float aspect_ratio;
 	glm::mat3x4 camera_rotation;
-	uint32_t octree_depth;
+	uint32_t tree64_depth;
 };
 
 static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
@@ -249,6 +248,7 @@ void Application::create_device() {
 
 	auto const features = vk::PhysicalDeviceFeatures{
 		.depthClamp = vk::True,
+		.shaderInt64 = vk::True,
 	};
 
 	auto create_info = vk::DeviceCreateInfo{
@@ -582,27 +582,33 @@ void Application::create_command_buffers() {
 	m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
 }
 
+template<typename T>
+inline constexpr T divide_ceil(T const& a, T const& b) {
+	return T((a + b - T(1)) / b);
+}
+
 void Application::create_voxels_shader_storage_buffer() {
-	auto octree = std::unique_ptr<Octree>{};
+	auto tree64 = std::unique_ptr<Tree64>{};
 	auto const vox_path = get_asset_path("vox/sponza.vox");
 	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
-		m_octree_depth = glm::log2(std::bit_ceil(glm::max(vox_full_size.x, vox_full_size.y, vox_full_size.z)));
-		if (m_octree_depth > Octree::MAX_DEPTH) {
+		auto const max = glm::max(4u, vox_full_size.x, vox_full_size.y, vox_full_size.z);
+		m_tree64_depth = divide_ceil(static_cast<uint8_t>(std::bit_width(max - 1u)), uint8_t{ 2u });
+		if (m_tree64_depth > Tree64::MAX_DEPTH) {
 			return false;
 		}
-		octree = std::make_unique<Octree>(m_octree_depth);
+		tree64 = std::make_unique<Tree64>(m_tree64_depth);
 		return true;
 	}, [&](glm::uvec3 const& voxel) {
-		octree->add_voxel(voxel);
+		tree64->add_voxel(voxel);
 	});
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
 	}
-	auto nodes = octree->build_contiguous_nodes();
+	auto const nodes = tree64->build_contiguous_nodes();
 	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	auto* const data = reinterpret_cast<OctreeNode*>(staging_buffer_memory.mapMemory(0u, buffer_size));
+	auto* const data = reinterpret_cast<Tree64Node*>(staging_buffer_memory.mapMemory(0u, buffer_size));
 	std::ranges::copy(nodes, data);
 	staging_buffer_memory.unmapMemory();
 
@@ -761,7 +767,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 		.camera_position = m_camera.position(),
 		.aspect_ratio = viewport.width / viewport.height,
 		.camera_rotation = m_camera.rotation(),
-		.octree_depth = m_octree_depth,
+		.tree64_depth = m_tree64_depth,
 	};
 	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
 	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0u, *m_descriptor_sets[m_current_in_flight_frame_index], {});

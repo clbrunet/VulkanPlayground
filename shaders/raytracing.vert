@@ -4,7 +4,7 @@ layout(push_constant) uniform PushConstants {
 	vec3 u_camera_position;
 	float u_aspect_ratio;
 	mat3 u_camera_rotation;
-	uint u_octree_depth;
+	uint u_tree64_depth;
 };
 
 layout(location = 0) out vec3 v_ray;

@@ -249,6 +249,7 @@ void Application::create_device() {
 
 	auto const features = vk::PhysicalDeviceFeatures{
 		.depthClamp = vk::True,
+		.shaderInt64 = vk::True,
 	};
 
 	auto create_info = vk::DeviceCreateInfo{
@@ -355,7 +356,7 @@ void Application::create_swapchain() {
 		.pQueueFamilyIndices = std::data(queue_family_indices),
 		.preTransform = surface_capabilities.currentTransform,
 		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		.presentMode = vk::PresentModeKHR::eFifo,
+		.presentMode = vk::PresentModeKHR::eImmediate,
 		.clipped = vk::True,
 		.oldSwapchain = vk::SwapchainKHR{},
 	};
@@ -391,6 +392,8 @@ void Application::create_descriptor_set_layout() {
 }
 
 void Application::create_render_pass() {
+#pragma warning(push)
+#pragma warning(disable : 6001)
 	auto const attachment_description = vk::AttachmentDescription{
 		.format = m_swapchain_format,
 		.samples = vk::SampleCountFlagBits::e1,
@@ -401,17 +404,21 @@ void Application::create_render_pass() {
 		.initialLayout = vk::ImageLayout::eUndefined,
 		.finalLayout = vk::ImageLayout::ePresentSrcKHR,
 	};
+#pragma warning(pop)
 
 	auto const attachment_reference = vk::AttachmentReference{
 		.attachment = 0u,
 		.layout = vk::ImageLayout::eColorAttachmentOptimal,
 	};
 
+#pragma warning(push)
+#pragma warning(disable : 6001)
 	auto const subpass_description = vk::SubpassDescription{
 		.pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
 		.colorAttachmentCount = 1u,
 		.pColorAttachments = &attachment_reference,
 	};
+#pragma warning(pop)
 
 	auto const subpass_dependency = vk::SubpassDependency{
 		.srcSubpass = vk::SubpassExternal,
@@ -582,11 +589,21 @@ void Application::create_command_buffers() {
 	m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
 }
 
+template<typename T>
+constexpr inline T divide_ceil(T const& a, T const& b) {
+	return T((a + b - T(1)) / b);
+}
+
 void Application::create_voxels_shader_storage_buffer() {
 	auto octree = std::unique_ptr<Octree>{};
-	auto const vox_path = get_asset_path("vox/sponza.vox");
+	//auto const vox_path = get_asset_path("vox/sponza.vox");
+	auto vox_path = get_asset_path("vox/sponzas.vox");
+	vox_path = std::filesystem::path{ "D:/Downloads/castle.vox" };
+	//vox_path = std::filesystem::path{ "D:/Downloads/16.vox" };
+	auto const begin_time = std::chrono::high_resolution_clock::now();
 	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
-		m_octree_depth = glm::log2(std::bit_ceil(glm::max(vox_full_size.x, vox_full_size.y, vox_full_size.z)));
+		auto const max = glm::max(2u, vox_full_size.x, vox_full_size.y, vox_full_size.z);
+		m_octree_depth = divide_ceil(static_cast<uint8_t>(std::log2(std::bit_ceil(max))), uint8_t{ 2u });
 		if (m_octree_depth > Octree::MAX_DEPTH) {
 			return false;
 		}
@@ -598,8 +615,16 @@ void Application::create_voxels_shader_storage_buffer() {
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
 	}
-	auto nodes = octree->build_contiguous_nodes();
+	auto const import_done_time = std::chrono::high_resolution_clock::now();
+	std::cout << "import time " << std::chrono::duration_cast<std::chrono::milliseconds>(import_done_time - begin_time) << std::endl;
+	//auto const nodes = octree->build_contiguous_nodes();
+	auto nodes = octree->build_contiguous_nodes();//CBTODO
+	//nodes[0] = OctreeNode{ .octants_mask = 1u, .bits = 1u };
+	std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
+	std::cout << "full time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
+	std::cout << "node count " << nodes.size() << std::endl;
 	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
+	std::cout << "buffer_size " << buffer_size << std::endl;
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	auto* const data = reinterpret_cast<OctreeNode*>(staging_buffer_memory.mapMemory(0u, buffer_size));

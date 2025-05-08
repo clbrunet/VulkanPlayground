@@ -16,8 +16,6 @@ add_subdirectory(ext/glm SYSTEM)
 
 add_subdirectory(ext/stb SYSTEM)
 
-add_subdirectory(ext/SimplexNoise SYSTEM)
-
 set(SHADERS_DIRECTORY ${CMAKE_SOURCE_DIR}/shaders)
 set(SPIRV_SHADERS_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
 
@@ -69,7 +67,6 @@ target_link_libraries(VulkanPlayground PRIVATE
   Vulkan::Vulkan
   glm
   stb
-  SimplexNoise
 )
 
 set_target_properties(VulkanPlayground PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

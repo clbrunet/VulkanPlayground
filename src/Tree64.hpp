@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 #include <span>
+#include <filesystem>
+#include <optional>
 
 constexpr uint64_t operator""_u64(unsigned long long const value) {
 	return static_cast<uint64_t>(value);
@@ -51,11 +53,15 @@ class Tree64 {
 public:
 	static constexpr auto MAX_DEPTH = uint8_t{ 8u };
 
+	[[nodiscard]] static std::optional<Tree64> voxelize_model(std::filesystem::path const& path, uint32_t max_side_voxel_count);
+	[[nodiscard]] static std::optional<Tree64> import_vox(std::filesystem::path const& path);
+
 	Tree64(uint8_t depth);
 
-	void add_voxel(glm::uvec3 const& voxel);
-	
+	uint8_t depth() const;
 	std::vector<Tree64Node> build_contiguous_nodes() const;
+
+	void add_voxel(glm::uvec3 const& voxel);
 
 private:
 	uint8_t m_depth;

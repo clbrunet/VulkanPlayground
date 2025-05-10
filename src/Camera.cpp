@@ -1,6 +1,7 @@
 #include "Camera.hpp"
 
 #include <glm/gtx/euler_angles.hpp>
+#include <glm/gtx/io.hpp>
 
 #include <numbers>
 #include <iostream>

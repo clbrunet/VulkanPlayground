@@ -233,6 +233,11 @@ void main() {
 		const uint current_child_index = compute_current_child_index(node, stack[stack_index], first_child_index);
 		if (current_child_index == 64u) {
 			if (stack_index == 0u) {
+				//out_color = vec4(vec3(float(iter) / 300.f), 1.f); return;
+				if (stack[0].children_intesection_mask == 0ul) {
+					out_color = vec4(1.f, 1.f, 1.f, 1.f);
+					return;
+				}
 				break;
 			}
 			stack_index -= 1u;
@@ -246,6 +251,7 @@ void main() {
 		child_min += child_size * vec3(float(current_child_index & 1u), float((current_child_index & 16u) >> 4u), float((current_child_index & 4u) >> 2u));
 		if (is_leaf(node)) {
 			out_color = vec4(compute_color(ray, child_min, child_min + child_size), 1.f);
+			//out_color = vec4(vec3(float(iter) / 300.f), 1.f);
 			return;
 		}
 		stack_index += 1u;

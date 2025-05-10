@@ -85,7 +85,7 @@ private:
 
 	uint32_t find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags property_flags) const;
 
-	void one_time_commands(std::invocable<vk::CommandBuffer> auto commands_recorder) const;
+	void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
 
 private:
 	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;

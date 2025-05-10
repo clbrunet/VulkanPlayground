@@ -588,10 +588,14 @@ inline constexpr T divide_ceil(T const& a, T const& b) {
 }
 
 void Application::create_voxels_shader_storage_buffer() {
+#if 0
 	auto tree64 = std::unique_ptr<Tree64>{};
-	auto const vox_path = get_asset_path("vox/sponza.vox");
+	//auto const vox_path = get_asset_path("vox/sponza.vox");
+	auto vox_path = get_asset_path("vox/sponza.vox");
+	//vox_path = std::filesystem::path{ "D:/Documents/MagicaVoxel-0.99.7.1-win64/vox/castle.vox" };
+	auto const begin_time = std::chrono::high_resolution_clock::now();
 	auto const has_import_succeed = import_vox(vox_path, [&](glm::uvec3 const& vox_full_size) {
-		auto const max = glm::max(4u, vox_full_size.x, vox_full_size.y, vox_full_size.z);
+		auto const max = glm::max(4u, vox_full_size.x, vox_full_size.y, vox_full_size.z); //CBTODO glm::max(4u, max_component(vox_full_size))
 		m_tree64_depth = divide_ceil(static_cast<uint8_t>(std::bit_width(max - 1u)), uint8_t{ 2u });
 		if (m_tree64_depth > Tree64::MAX_DEPTH) {
 			return false;
@@ -604,8 +608,23 @@ void Application::create_voxels_shader_storage_buffer() {
 	if (!has_import_succeed) {
 		throw std::runtime_error{ "cannot import \"" + vox_path.string() + '"' };
 	}
+#else
+	auto const begin_time = std::chrono::high_resolution_clock::now();
+	// auto tree64CBTODO = Tree64::voxelize_model("D:/Documents/Dev/sphere_cylinder.glb", 256);
+	//auto tree64CBTODO = Tree64::voxelize_model("D:/Documents/Dev/triangle.glb", 64);
+	auto tree64CBTODO = Tree64::voxelize_model("D:/Documents/Dev/bisto_stripped.glb", 4096);
+	auto tree64 = &tree64CBTODO;
+	m_tree64_depth = tree64->depth();
+#endif
+	auto const import_done_time = std::chrono::high_resolution_clock::now();
+	auto const import_time = std::chrono::duration_cast<std::chrono::milliseconds>(import_done_time - begin_time);
+	std::cout << "import time " << import_time << std::endl;
 	auto const nodes = tree64->build_contiguous_nodes();
+	std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
+	std::cout << "full time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
+	std::cout << "node count " << nodes.size() << std::endl;
 	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
+	std::cout << "buffer_size " << buffer_size << std::endl;
 	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	auto* const data = reinterpret_cast<Tree64Node*>(staging_buffer_memory.mapMemory(0u, buffer_size));
@@ -952,7 +971,7 @@ uint32_t Application::find_memory_type(uint32_t const type_bits, vk::MemoryPrope
 	throw std::runtime_error{ message };
 }
 
-void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto commands_recorder) const {
+void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const {
 	auto const command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
 		.commandPool = m_command_pool,
 		.level = vk::CommandBufferLevel::ePrimary,

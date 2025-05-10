@@ -3,18 +3,28 @@ cmake_minimum_required(VERSION 3.25)
 project(VulkanPlayground VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_EXPORT_COMPILE_COMMANDS On)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
-set(GLFW_BUILD_EXAMPLES Off)
-set(GLFW_BUILD_TESTS Off)
-set(GLFW_BUILD_DOCS Off)
+set(GLFW_BUILD_EXAMPLES OFF)
+set(GLFW_BUILD_TESTS OFF)
+set(GLFW_BUILD_DOCS OFF)
 add_subdirectory(ext/glfw SYSTEM)
 
 add_subdirectory(ext/glm SYSTEM)
 
 add_subdirectory(ext/stb SYSTEM)
+
+set(BUILD_SHARED_LIBS OFF)
+set(ASSIMP_NO_EXPORT ON)
+set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
+set(ASSIMP_BUILD_TESTS OFF)
+set(ASSIMP_INSTALL OFF)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON)
+add_subdirectory("./ext/assimp" SYSTEM)
 
 set(SHADERS_DIRECTORY ${CMAKE_SOURCE_DIR}/shaders)
 set(SPIRV_SHADERS_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
@@ -67,6 +77,7 @@ target_link_libraries(VulkanPlayground PRIVATE
   Vulkan::Vulkan
   glm
   stb
+  assimp
 )
 
 set_target_properties(VulkanPlayground PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

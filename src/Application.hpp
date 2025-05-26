@@ -78,7 +78,7 @@ private:
 
 	std::tuple<vk::raii::Image, vk::raii::DeviceMemory> create_image(vk::Format format, uint32_t width, uint32_t height,
 		vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags memory_property_flags) const;
-	void transition_image_layout(vk::Image image, vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
+	void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image image, vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
 	void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
 
 	vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
@@ -110,10 +110,8 @@ private:
 	vk::Format m_swapchain_format;
 	vk::Extent2D m_swapchain_extent;
 	std::vector<vk::raii::ImageView> m_image_views;
-	std::vector<vk::raii::Framebuffer> m_framebuffers;
 
 	vk::raii::DescriptorSetLayout m_descriptor_set_layout = { nullptr };
-	vk::raii::RenderPass m_render_pass = { nullptr };
 	vk::raii::PipelineLayout m_pipeline_layout = { nullptr };
 	vk::raii::Pipeline m_graphics_pipeline = { nullptr };
 

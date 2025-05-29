@@ -241,7 +241,8 @@ void Application::create_device() {
 			};
 	});
 
-	auto const dynamic_rendering_features = vk::PhysicalDeviceDynamicRenderingFeatures{
+	auto const vulkan13_features = vk::PhysicalDeviceVulkan13Features{
+		.synchronization2 = vk::True,
 		.dynamicRendering = vk::True,
 	};
 	auto const features = vk::PhysicalDeviceFeatures{
@@ -250,7 +251,7 @@ void Application::create_device() {
 	};
 
 	auto create_info = vk::DeviceCreateInfo{
-		.pNext = &dynamic_rendering_features,
+		.pNext = &vulkan13_features,
 		.queueCreateInfoCount = static_cast<uint32_t>(std::size(queue_create_infos)),
 		.pQueueCreateInfos = std::data(queue_create_infos),
 		.enabledExtensionCount = static_cast<uint32_t>(std::size(DEVICE_REQUIRED_EXTENSIONS)),
@@ -484,7 +485,6 @@ void Application::create_graphics_pipeline() {
 		.pColorBlendState = &color_blend_state_create_info,
 		.pDynamicState = &dynamic_state_create_info,
 		.layout = m_pipeline_layout,
-		.subpass = 0u,
 	};
 	m_graphics_pipeline = vk::raii::Pipeline{ m_device, { nullptr }, create_info };
 }
@@ -638,17 +638,25 @@ void Application::draw_frame() {
 	command_buffer.reset();
 	record_command_buffer(command_buffer, image_index);
 
-	auto const wait_stage = vk::PipelineStageFlags{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
-	auto const submit_info = vk::SubmitInfo{
-		.waitSemaphoreCount = 1u,
-		.pWaitSemaphores = &*image_available_semaphore,
-		.pWaitDstStageMask = &wait_stage,
-		.commandBufferCount = 1u,
-		.pCommandBuffers = &*command_buffer,
-		.signalSemaphoreCount = 1u,
-		.pSignalSemaphores = &*render_finished_semaphore,
+	auto const wait_semaphore_submit_info = vk::SemaphoreSubmitInfo{
+		.semaphore = image_available_semaphore,
+		.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 	};
-	m_graphics_queue.submit(submit_info, in_flight_fence);
+	auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
+		.commandBuffer = command_buffer,
+	};
+	auto const render_finished_semaphore_submit_info = vk::SemaphoreSubmitInfo{
+		.semaphore = render_finished_semaphore,
+		.stageMask = vk::PipelineStageFlagBits2::eAllCommands,
+	};
+	m_graphics_queue.submit2(vk::SubmitInfo2{
+		.waitSemaphoreInfoCount = 1u,
+		.pWaitSemaphoreInfos = &wait_semaphore_submit_info,
+		.commandBufferInfoCount = 1u,
+		.pCommandBufferInfos = &command_buffer_submit_info,
+		.signalSemaphoreInfoCount = 1u,
+		.pSignalSemaphoreInfos = &render_finished_semaphore_submit_info,
+	}, in_flight_fence);
 
 	try {
 		auto const present_info = vk::PresentInfoKHR{
@@ -803,9 +811,8 @@ std::tuple<vk::raii::Image, vk::raii::DeviceMemory> Application::create_image(vk
 
 	return std::make_tuple(std::move(image), std::move(image_memory));
 }
-
 void Application::transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image, vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) const {
-	auto memory_barrier = vk::ImageMemoryBarrier{
+	auto memory_barrier = vk::ImageMemoryBarrier2{
 		.oldLayout = old_layout,
 		.newLayout = new_layout,
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
@@ -819,34 +826,34 @@ void Application::transition_image_layout(vk::CommandBuffer const command_buffer
 			.layerCount = vk::RemainingArrayLayers,
 		},
 	};
-
-	auto src_stage = vk::PipelineStageFlags{};
-	auto dst_stage = vk::PipelineStageFlags{};
 	if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
-		memory_barrier.srcAccessMask = vk::AccessFlags{};
-		memory_barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-		src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-		dst_stage = vk::PipelineStageFlagBits::eTransfer;
+		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
+		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
 	} else if (old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-		memory_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-		src_stage = vk::PipelineStageFlagBits::eTransfer;
-		dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
+		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
 	} else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eColorAttachmentOptimal) {
-		memory_barrier.srcAccessMask = vk::AccessFlags{};
-		memory_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-		src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-		dst_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
+		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
 	} else if (old_layout == vk::ImageLayout::eColorAttachmentOptimal && new_layout == vk::ImageLayout::ePresentSrcKHR) {
-		memory_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
-		src_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		dst_stage = vk::PipelineStageFlagBits::eBottomOfPipe;
+		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eNone;
+		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eNone;
 	} else {
 		assert(false && "unsupported image layout transition");
 	}
 
-	command_buffer.pipelineBarrier(src_stage, dst_stage, vk::DependencyFlags{}, {}, {}, memory_barrier);
+	command_buffer.pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = 1u,
+		.pImageMemoryBarriers = &memory_barrier,
+	});
 }
 
 void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
@@ -927,11 +934,12 @@ void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const
 
 	command_buffer.end();
 
-	auto const submit_info = vk::SubmitInfo{
-		.commandBufferCount = 1u,
-		.pCommandBuffers = &*command_buffer,
+	auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
+		.commandBuffer = command_buffer,
 	};
-
-	m_graphics_queue.submit(submit_info);
+	m_graphics_queue.submit2(vk::SubmitInfo2{
+		.commandBufferInfoCount = 1u,
+		.pCommandBufferInfos = &command_buffer_submit_info,
+	});
 	m_graphics_queue.waitIdle();
 }

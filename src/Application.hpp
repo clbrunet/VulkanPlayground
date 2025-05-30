@@ -50,7 +50,6 @@ private:
 	void create_swapchain();
 	void create_image_views();
 
-	void create_descriptor_set_layout();
 	void create_render_pass();
 	void create_graphics_pipeline();
 	vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
@@ -60,9 +59,7 @@ private:
 	void create_command_pool();
 	void create_command_buffers();
 
-	void create_voxels_shader_storage_buffer();
-	void create_descriptor_pool();
-	void create_descriptor_sets();
+	void create_tree64_shader_storage_buffer();
 
 	void create_sync_objects();
 
@@ -111,18 +108,15 @@ private:
 	vk::Extent2D m_swapchain_extent;
 	std::vector<vk::raii::ImageView> m_image_views;
 
-	vk::raii::DescriptorSetLayout m_descriptor_set_layout = { nullptr };
 	vk::raii::PipelineLayout m_pipeline_layout = { nullptr };
 	vk::raii::Pipeline m_graphics_pipeline = { nullptr };
 
 	vk::raii::CommandPool m_command_pool = { nullptr };
 	vk::raii::CommandBuffers m_command_buffers = { nullptr };
 
-	vk::raii::Buffer m_voxels_storage_buffer = { nullptr };
-	vk::raii::DeviceMemory m_voxels_storage_buffer_memory = { nullptr };
-
-	vk::raii::DescriptorPool m_descriptor_pool = { nullptr };
-	vk::raii::DescriptorSets m_descriptor_sets = { nullptr };
+	vk::raii::Buffer m_tree64_storage_buffer = { nullptr };
+	vk::raii::DeviceMemory m_tree64_storage_buffer_memory = { nullptr };
+	vk::DeviceAddress m_tree64_device_address;
 
 	std::vector<vk::raii::Semaphore> m_image_available_semaphores;
 	std::vector<vk::raii::Semaphore> m_render_finished_semaphores;

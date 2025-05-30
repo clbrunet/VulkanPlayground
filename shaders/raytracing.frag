@@ -1,5 +1,7 @@
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_scalar_block_layout : require
 
 struct Tree64Node {
 	uint up_children_mask;
@@ -26,6 +28,22 @@ uint first_child_node_index(Tree64Node node) {
 
 const uint MAX_TREE64_DEPTH = 8u;
 
+layout(std430, buffer_reference) readonly buffer Tree64NodesBuffer {
+	Tree64Node b_tree64_nodes[];
+};
+
+layout(scalar, push_constant) uniform PushConstants {
+	vec3 u_camera_position;
+	float u_aspect_ratio;
+	mat3 u_camera_rotation;
+	uint u_tree64_depth;
+	Tree64NodesBuffer u_tree64_nodes_device_address;
+};
+
+layout(location = 0) in vec3 v_ray_direction;
+
+layout(location = 0) out vec4 out_color;
+
 struct StackElem {
 	uint64_t children_intesection_mask;
 	uint checked_child_count;
@@ -38,21 +56,6 @@ struct Ray {
 	vec3 direction;
 	vec3 direction_inverse;
 };
-
-layout(std430, binding = 0) readonly buffer Tree64NodesBuffer {
-	Tree64Node b_tree64_nodes[];
-};
-
-layout(push_constant) uniform PushConstants {
-	vec3 u_camera_position;
-	float u_aspect_ratio;
-	mat3 u_camera_rotation;
-	uint u_tree64_depth;
-};
-
-layout(location = 0) in vec3 v_ray_direction;
-
-layout(location = 0) out vec4 out_color;
 
 Ray compute_ray() {
 	Ray ray;
@@ -229,7 +232,7 @@ void main() {
 	while (iter < 1000u) {
 		iter += 1u;
 
-		const Tree64Node node = b_tree64_nodes[stack[stack_index].node_index];
+		const Tree64Node node = u_tree64_nodes_device_address.b_tree64_nodes[stack[stack_index].node_index];
 		const uint current_child_index = compute_current_child_index(node, stack[stack_index], first_child_index);
 		if (current_child_index == 64u) {
 			if (stack_index == 0u) {

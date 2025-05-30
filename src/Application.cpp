@@ -24,8 +24,9 @@ constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 struct PushConstants {
 	glm::vec3 camera_position;
 	float aspect_ratio;
-	glm::mat3x4 camera_rotation;
+	glm::mat3 camera_rotation;
 	uint32_t tree64_depth;
+	vk::DeviceAddress tree64_device_address;
 };
 
 static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
@@ -83,15 +84,12 @@ void Application::init_vulkan() {
 	create_swapchain();
 	create_image_views();
 
-	create_descriptor_set_layout();
 	create_graphics_pipeline();
 
 	create_command_pool();
 	create_command_buffers();
 
-	create_voxels_shader_storage_buffer();
-	create_descriptor_pool();
-	create_descriptor_sets();
+	create_tree64_shader_storage_buffer();
 
 	create_sync_objects();
 }
@@ -241,9 +239,14 @@ void Application::create_device() {
 			};
 	});
 
-	auto const vulkan13_features = vk::PhysicalDeviceVulkan13Features{
+	auto vulkan13_features = vk::PhysicalDeviceVulkan13Features{
 		.synchronization2 = vk::True,
 		.dynamicRendering = vk::True,
+	};
+	auto const vulkan12_features = vk::PhysicalDeviceVulkan12Features{
+		.pNext = &vulkan13_features,
+		.scalarBlockLayout = vk::True,
+		.bufferDeviceAddress = vk::True,
 	};
 	auto const features = vk::PhysicalDeviceFeatures{
 		.depthClamp = vk::True,
@@ -251,7 +254,7 @@ void Application::create_device() {
 	};
 
 	auto create_info = vk::DeviceCreateInfo{
-		.pNext = &vulkan13_features,
+		.pNext = &vulkan12_features,
 		.queueCreateInfoCount = static_cast<uint32_t>(std::size(queue_create_infos)),
 		.pQueueCreateInfos = std::data(queue_create_infos),
 		.enabledExtensionCount = static_cast<uint32_t>(std::size(DEVICE_REQUIRED_EXTENSIONS)),
@@ -370,23 +373,6 @@ void Application::create_image_views() {
 	});
 }
 
-void Application::create_descriptor_set_layout() {
-	auto const voxels_storage_buffer_binding = vk::DescriptorSetLayoutBinding{
-		.binding = 0u,
-		.descriptorType = vk::DescriptorType::eStorageBuffer,
-		.descriptorCount = 1u,
-		.stageFlags = vk::ShaderStageFlagBits::eFragment,
-		.pImmutableSamplers = nullptr,
-	};
-	auto const bindings = std::to_array({ voxels_storage_buffer_binding });
-
-	auto const create_info = vk::DescriptorSetLayoutCreateInfo{
-		.bindingCount = static_cast<uint32_t>(std::size(bindings)),
-		.pBindings = std::data(bindings),
-	};
-	m_descriptor_set_layout = vk::raii::DescriptorSetLayout{ m_device, create_info };
-}
-
 void Application::create_graphics_pipeline() {
 	auto const rendering_create_info = vk::PipelineRenderingCreateInfo{
 		.colorAttachmentCount = 1u,
@@ -464,8 +450,6 @@ void Application::create_graphics_pipeline() {
 		},
 	};
 	auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
-		.setLayoutCount = 1u,
-		.pSetLayouts = &*m_descriptor_set_layout,
 		.pushConstantRangeCount = static_cast<uint32_t>(std::size(push_contant_ranges)),
 		.pPushConstantRanges = std::data(push_contant_ranges),
 	};
@@ -526,7 +510,7 @@ inline constexpr T divide_ceil(T const& a, T const& b) {
 	return T((a + b - T(1)) / b);
 }
 
-void Application::create_voxels_shader_storage_buffer() {
+void Application::create_tree64_shader_storage_buffer() {
 	auto const begin_time = std::chrono::high_resolution_clock::now();
 
 	auto const path = get_asset_path("models/bistro_exterior.glb");
@@ -555,52 +539,14 @@ void Application::create_voxels_shader_storage_buffer() {
 	std::ranges::copy(nodes, data);
 	staging_buffer_memory.unmapMemory();
 
-	std::tie(m_voxels_storage_buffer, m_voxels_storage_buffer_memory) = create_buffer(buffer_size,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
-	copy_buffer(staging_buffer, m_voxels_storage_buffer, buffer_size);
-}
+	std::tie(m_tree64_storage_buffer, m_tree64_storage_buffer_memory) = create_buffer(buffer_size,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer
+		| vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal);
+	copy_buffer(staging_buffer, m_tree64_storage_buffer, buffer_size);
 
-void Application::create_descriptor_pool() {
-	auto const voxels_storage_buffer_pool_size = vk::DescriptorPoolSize{
-		.type = vk::DescriptorType::eStorageBuffer,
-		.descriptorCount = 1u,
-	};
-	auto const pool_sizes = std::array{ voxels_storage_buffer_pool_size };
-	auto const create_info = vk::DescriptorPoolCreateInfo{
-		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		.maxSets = MAX_FRAMES_IN_FLIGHT,
-		.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes)),
-		.pPoolSizes = std::data(pool_sizes),
-	};
-	m_descriptor_pool = vk::raii::DescriptorPool{ m_device, create_info };
-}
-
-void Application::create_descriptor_sets() {
-	auto layouts = std::array<vk::DescriptorSetLayout, MAX_FRAMES_IN_FLIGHT>{};
-	layouts.fill(m_descriptor_set_layout);
-	auto const allocate_info = vk::DescriptorSetAllocateInfo{
-		.descriptorPool = m_descriptor_pool,
-		.descriptorSetCount = static_cast<uint32_t>(std::size(layouts)),
-		.pSetLayouts = std::data(layouts),
-	};
-	m_descriptor_sets = vk::raii::DescriptorSets{ m_device, allocate_info };
-	for (auto const& descriptor_set : m_descriptor_sets) {
-		auto const voxels_storage_buffer_info = vk::DescriptorBufferInfo{
-			.buffer = m_voxels_storage_buffer,
-			.offset = 0u,
-			.range = vk::WholeSize,
-		};
-		auto const voxels_storage_buffer_descriptor_write = vk::WriteDescriptorSet{
-			.dstSet = descriptor_set,
-			.dstBinding = 0u,
-			.dstArrayElement = 0u,
-			.descriptorCount = 1u,
-			.descriptorType = vk::DescriptorType::eStorageBuffer,
-			.pBufferInfo = &voxels_storage_buffer_info,
-		};
-		auto const descriptor_writes = std::array{ voxels_storage_buffer_descriptor_write };
-		m_device.updateDescriptorSets(descriptor_writes, {});
-	}
+	m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
+		.buffer = m_tree64_storage_buffer
+	});
 }
 
 void Application::create_sync_objects() {
@@ -725,9 +671,9 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 		.aspect_ratio = viewport.width / viewport.height,
 		.camera_rotation = m_camera.rotation(),
 		.tree64_depth = m_tree64_depth,
+		.tree64_device_address = m_tree64_device_address,
 	};
 	command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
-	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0u, *m_descriptor_sets[m_current_in_flight_frame_index], {});
 	command_buffer.draw(3u, 1u, 0u, 0u);
 
 	command_buffer.endRendering();
@@ -765,8 +711,13 @@ std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> Application::create_buffer(
 
 	auto buffer = vk::raii::Buffer{ m_device, create_info };
 
+	auto const memory_allocate_flags_info = vk::MemoryAllocateFlagsInfo{
+		.flags = (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
+			? vk::MemoryAllocateFlagBits::eDeviceAddress : vk::MemoryAllocateFlags{},
+	};
 	auto const memory_requirements = buffer.getMemoryRequirements();
 	auto const memory_allocate_info = vk::MemoryAllocateInfo{
+		.pNext = &memory_allocate_flags_info,
 		.allocationSize = memory_requirements.size,
 		.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags),
 	};

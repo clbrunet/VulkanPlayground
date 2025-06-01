@@ -12,12 +12,14 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Vulkan REQUIRED COMPONENTS glslc)
-
 set(GLFW_BUILD_EXAMPLES OFF)
 set(GLFW_BUILD_TESTS OFF)
 set(GLFW_BUILD_DOCS OFF)
 add_subdirectory(ext/glfw SYSTEM)
+
+find_package(Vulkan REQUIRED COMPONENTS glslc)
+
+add_subdirectory(ext/VulkanMemoryAllocator SYSTEM)
 
 add_subdirectory(ext/glm SYSTEM)
 
@@ -82,6 +84,7 @@ target_include_directories(VulkanPlayground PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/
 target_link_libraries(VulkanPlayground PRIVATE
   glfw
   Vulkan::Vulkan
+  VulkanMemoryAllocator
   glm
   stb
   assimp

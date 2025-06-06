@@ -12,7 +12,6 @@
 #include <fstream>
 #include <optional>
 #include <span>
-#include <format>
 #include <filesystem>
 #include <concepts>
 #include <chrono>
@@ -56,6 +55,11 @@ Application::Application() {
 	init_vulkan();
 }
 
+Application::~Application() {
+	vmaDestroyBuffer(m_allocator, m_tree64_storage_buffer, m_tree64_storage_buffer_allocation);
+	vmaDestroyAllocator(m_allocator);
+}
+
 void Application::run() {
 	m_window.prepare_event_loop();
 	while (!m_window.should_close()) {
@@ -94,13 +98,15 @@ void Application::init_vulkan() {
 	create_sync_objects();
 }
 
+constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
+
 void Application::create_instance() {
 	auto const application_info = vk::ApplicationInfo{
 		.pApplicationName = "Vulkan Playground",
 		.applicationVersion = vk::makeApiVersion(0u, 0u, 1u, 0u),
 		.pEngineName = "No Engine",
 		.engineVersion = vk::makeApiVersion(0u, 0u, 1u, 0u),
-		.apiVersion = vk::ApiVersion13,
+		.apiVersion = VULKAN_API_VERSION,
 	};
 
 	auto glfw_extension_count = uint32_t{};
@@ -237,7 +243,8 @@ void Application::create_device() {
 				.queueCount = 1u,
 				.pQueuePriorities = &queue_priority,
 			};
-	});
+		}
+	);
 
 	auto vulkan13_features = vk::PhysicalDeviceVulkan13Features{
 		.synchronization2 = vk::True,
@@ -270,6 +277,15 @@ void Application::create_device() {
 	m_device = vk::raii::Device{ m_physical_device, create_info };
 	m_graphics_queue = m_device.getQueue(queue_family_indices.graphics, 0u);
 	m_present_queue = m_device.getQueue(queue_family_indices.present, 0u);
+
+	auto const allocator_create_info = VmaAllocatorCreateInfo{
+		.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+		.physicalDevice = *m_physical_device,
+		.device = *m_device,
+		.instance = *m_instance,
+		.vulkanApiVersion = VULKAN_API_VERSION,
+	};
+	vmaCreateAllocator(&allocator_create_info, &m_allocator);
 }
 
 Application::QueueFamilyIndices Application::get_queue_family_indices() const {
@@ -505,11 +521,6 @@ void Application::create_command_buffers() {
 	m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
 }
 
-template<typename T>
-inline constexpr T divide_ceil(T const& a, T const& b) {
-	return T((a + b - T(1)) / b);
-}
-
 void Application::create_tree64_shader_storage_buffer() {
 	auto const begin_time = std::chrono::high_resolution_clock::now();
 
@@ -533,16 +544,17 @@ void Application::create_tree64_shader_storage_buffer() {
 	std::cout << "node count " << nodes.size() << std::endl;
 
 	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
-	auto const [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	auto* const data = reinterpret_cast<Tree64Node*>(staging_buffer_memory.mapMemory(0u, buffer_size));
-	std::ranges::copy(nodes, data);
-	staging_buffer_memory.unmapMemory();
 
-	std::tie(m_tree64_storage_buffer, m_tree64_storage_buffer_memory) = create_buffer(buffer_size,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer
-		| vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal);
+	auto const [staging_buffer, staging_buffer_allocation] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
+	vmaCopyMemoryToAllocation(m_allocator, reinterpret_cast<void const*>(nodes.data()), staging_buffer_allocation, 0u, buffer_size);
+
+	std::tie(m_tree64_storage_buffer, m_tree64_storage_buffer_allocation) = create_buffer(buffer_size,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+		0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 	copy_buffer(staging_buffer, m_tree64_storage_buffer, buffer_size);
+
+	vmaDestroyBuffer(m_allocator, staging_buffer, staging_buffer_allocation);
 
 	m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
 		.buffer = m_tree64_storage_buffer
@@ -701,31 +713,22 @@ void Application::clean_swapchain() {
 	m_swapchain.clear();
 }
 
-std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> Application::create_buffer(vk::DeviceSize const size,
-	vk::BufferUsageFlags const usage, vk::MemoryPropertyFlags const memory_property_flags) const {
+std::tuple<vk::Buffer, VmaAllocation> Application::create_buffer(vk::DeviceSize const size,
+	vk::BufferUsageFlags const usage, VmaAllocationCreateFlags const allocation_flags, VmaMemoryUsage const memory_usage) const {
 	auto const create_info = vk::BufferCreateInfo{
 		.size = size,
 		.usage = usage,
-		.sharingMode = vk::SharingMode::eExclusive,
 	};
-
-	auto buffer = vk::raii::Buffer{ m_device, create_info };
-
-	auto const memory_allocate_flags_info = vk::MemoryAllocateFlagsInfo{
-		.flags = (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
-			? vk::MemoryAllocateFlagBits::eDeviceAddress : vk::MemoryAllocateFlags{},
+	auto const allocation_create_info = VmaAllocationCreateInfo{
+		.flags = allocation_flags,
+		.usage = memory_usage,
 	};
-	auto const memory_requirements = buffer.getMemoryRequirements();
-	auto const memory_allocate_info = vk::MemoryAllocateInfo{
-		.pNext = &memory_allocate_flags_info,
-		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags),
-	};
+	auto buffer = VkBuffer{};
+	auto buffer_allocation = VmaAllocation{};
+	vmaCreateBuffer(m_allocator, reinterpret_cast<VkBufferCreateInfo const*>(&create_info),
+		&allocation_create_info, &buffer, &buffer_allocation, nullptr);
 
-	auto buffer_memory = vk::raii::DeviceMemory{ m_device, memory_allocate_info };
-	buffer.bindMemory(buffer_memory, 0u);
-	
-	return std::make_tuple(std::move(buffer), std::move(buffer_memory));
+	return std::make_tuple(vk::Buffer{ buffer }, buffer_allocation);
 }
 
 void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
@@ -735,33 +738,6 @@ void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::De
 	});
 }
 
-std::tuple<vk::raii::Image, vk::raii::DeviceMemory> Application::create_image(vk::Format const format, uint32_t const width, uint32_t const height,
-	vk::ImageTiling const tiling, vk::ImageUsageFlags const usage, vk::MemoryPropertyFlags const memory_property_flags) const {
-	auto const create_info = vk::ImageCreateInfo{
-		.imageType = vk::ImageType::e2D,
-		.format = format,
-		.extent = vk::Extent3D{ width, height, 1u },
-		.mipLevels = 1u,
-		.arrayLayers = 1u,
-		.samples = vk::SampleCountFlagBits::e1,
-		.tiling = tiling,
-		.usage = usage,
-		.sharingMode = vk::SharingMode::eExclusive,
-	};
-
-	auto image = vk::raii::Image{ m_device, create_info };
-
-	auto const memory_requirements = image.getMemoryRequirements();
-	auto const memory_allocate_info = vk::MemoryAllocateInfo{
-		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(memory_requirements.memoryTypeBits, memory_property_flags),
-	};
-
-	auto image_memory = vk::raii::DeviceMemory{ m_device, memory_allocate_info };
-	image.bindMemory(image_memory, 0u);
-
-	return std::make_tuple(std::move(image), std::move(image_memory));
-}
 void Application::transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image, vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) const {
 	auto memory_barrier = vk::ImageMemoryBarrier2{
 		.oldLayout = old_layout,
@@ -847,24 +823,6 @@ vk::raii::ImageView Application::create_image_view(vk::Image const image, vk::Fo
 	};
 
 	return vk::raii::ImageView{ m_device, create_info };
-}
-
-uint32_t Application::find_memory_type(uint32_t const type_bits, vk::MemoryPropertyFlags const property_flags) const {
-	auto const memory_properties = m_physical_device.getMemoryProperties();
-
-	auto i = 0u;
-	auto const memory_types = std::span{ std::data(memory_properties.memoryTypes), memory_properties.memoryTypeCount };
-	for (auto const memory_type : memory_types) {
-		if ((type_bits & (1 << i)) != 0 && (memory_type.propertyFlags & property_flags) == property_flags) {
-			return i;
-		}
-		i += 1u;
-	}
-
-	auto const message = std::format(
-		"physical device lacks memory type with bits: {:#b} and vk::MemoryPropertyFlags: {}",
-		type_bits, vk::to_string(property_flags));
-	throw std::runtime_error{ message };
 }
 
 void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const {

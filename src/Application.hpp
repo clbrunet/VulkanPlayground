@@ -4,6 +4,7 @@
 #include "Camera.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 
 #include <string_view>
@@ -15,6 +16,8 @@ class Application {
 public:
 	Application();
 	Application(Application const&) = delete;
+
+	~Application();
 
 	Application& operator=(Application const&) = delete;
 
@@ -69,18 +72,14 @@ private:
 	void recreate_swapchain();
 	void clean_swapchain();
 
-	std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> create_buffer(vk::DeviceSize size,
-		vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memory_property_flags) const;
+	std::tuple<vk::Buffer, VmaAllocation> create_buffer(vk::DeviceSize size,
+		vk::BufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage) const;
 	void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
 
-	std::tuple<vk::raii::Image, vk::raii::DeviceMemory> create_image(vk::Format format, uint32_t width, uint32_t height,
-		vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags memory_property_flags) const;
 	void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image image, vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
 	void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
 
 	vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
-
-	uint32_t find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags property_flags) const;
 
 	void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
 
@@ -101,10 +100,11 @@ private:
 	vk::raii::Device m_device = { nullptr };
 	vk::raii::Queue m_graphics_queue = { nullptr };
 	vk::raii::Queue m_present_queue = { nullptr };
+	VmaAllocator m_allocator = nullptr;
 
 	vk::raii::SwapchainKHR m_swapchain = { nullptr };
 	std::vector<vk::Image> m_swapchain_images;
-	vk::Format m_swapchain_format;
+	vk::Format m_swapchain_format = vk::Format::eUndefined;
 	vk::Extent2D m_swapchain_extent;
 	std::vector<vk::raii::ImageView> m_image_views;
 
@@ -114,9 +114,9 @@ private:
 	vk::raii::CommandPool m_command_pool = { nullptr };
 	vk::raii::CommandBuffers m_command_buffers = { nullptr };
 
-	vk::raii::Buffer m_tree64_storage_buffer = { nullptr };
-	vk::raii::DeviceMemory m_tree64_storage_buffer_memory = { nullptr };
-	vk::DeviceAddress m_tree64_device_address;
+	vk::Buffer m_tree64_storage_buffer = nullptr;
+	VmaAllocation m_tree64_storage_buffer_allocation = nullptr;
+	vk::DeviceAddress m_tree64_device_address = 0u;
 
 	std::vector<vk::raii::Semaphore> m_image_available_semaphores;
 	std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
@@ -124,5 +124,5 @@ private:
 	uint8_t m_current_in_flight_frame_index = 0u;
 
 	Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
-	uint8_t m_tree64_depth;
+	uint8_t m_tree64_depth = 0u;
 };

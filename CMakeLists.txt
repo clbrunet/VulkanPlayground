@@ -65,6 +65,7 @@ else()
     -Wpedantic
     -Wshadow
     -Wconversion
+    -Wno-missing-field-initializers
     $<$<CONFIG:Debug>:-g3>
   )
 endif()

@@ -2,9 +2,9 @@
 
 #include "Window.hpp"
 #include "Camera.hpp"
+#include "vulkan_utils.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
-#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 
 #include <string_view>
@@ -16,8 +16,6 @@ class Application {
 public:
 	Application();
 	Application(Application const&) = delete;
-
-	~Application();
 
 	Application& operator=(Application const&) = delete;
 
@@ -53,16 +51,13 @@ private:
 	void create_swapchain();
 	void create_image_views();
 
-	void create_render_pass();
 	void create_graphics_pipeline();
 	vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
-
-	void create_framebuffers();
 
 	void create_command_pool();
 	void create_command_buffers();
 
-	void create_tree64_shader_storage_buffer();
+	void create_tree64_buffer();
 
 	void create_sync_objects();
 
@@ -72,16 +67,12 @@ private:
 	void recreate_swapchain();
 	void clean_swapchain();
 
-	std::tuple<vk::Buffer, VmaAllocation> create_buffer(vk::DeviceSize size,
-		vk::BufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage) const;
-	void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
-
-	void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image image, vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
-	void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
-
 	vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
 
 	void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
+
+	void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
+	void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
 
 private:
 	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -89,33 +80,32 @@ private:
 	Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
 	bool m_should_recreate_swapchain = false;
 	vk::raii::Context m_context;
-	vk::raii::Instance m_instance = { nullptr };
-	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = { nullptr };
-	vk::raii::SurfaceKHR m_surface = { nullptr };
+	vk::raii::Instance m_instance = nullptr;
+	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = nullptr;
+	vk::raii::SurfaceKHR m_surface = nullptr;
 
 	static constexpr std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
 		vk::KHRSwapchainExtensionName,
 	});
-	vk::raii::PhysicalDevice m_physical_device = { nullptr };
-	vk::raii::Device m_device = { nullptr };
-	vk::raii::Queue m_graphics_queue = { nullptr };
-	vk::raii::Queue m_present_queue = { nullptr };
-	VmaAllocator m_allocator = nullptr;
+	vk::raii::PhysicalDevice m_physical_device = nullptr;
+	vk::raii::Device m_device = nullptr;
+	vk::raii::Queue m_graphics_queue = nullptr;
+	vk::raii::Queue m_present_queue = nullptr;
+	VmaRaiiAllocator m_allocator = nullptr;
 
-	vk::raii::SwapchainKHR m_swapchain = { nullptr };
+	vk::raii::SwapchainKHR m_swapchain = nullptr;
 	std::vector<vk::Image> m_swapchain_images;
 	vk::Format m_swapchain_format = vk::Format::eUndefined;
 	vk::Extent2D m_swapchain_extent;
 	std::vector<vk::raii::ImageView> m_image_views;
 
-	vk::raii::PipelineLayout m_pipeline_layout = { nullptr };
-	vk::raii::Pipeline m_graphics_pipeline = { nullptr };
+	vk::raii::PipelineLayout m_pipeline_layout = nullptr;
+	vk::raii::Pipeline m_graphics_pipeline = nullptr;
 
-	vk::raii::CommandPool m_command_pool = { nullptr };
-	vk::raii::CommandBuffers m_command_buffers = { nullptr };
+	vk::raii::CommandPool m_command_pool = nullptr;
+	vk::raii::CommandBuffers m_command_buffers = nullptr;
 
-	vk::Buffer m_tree64_storage_buffer = nullptr;
-	VmaAllocation m_tree64_storage_buffer_allocation = nullptr;
+	VmaRaiiBuffer m_tree64_buffer = nullptr;
 	vk::DeviceAddress m_tree64_device_address = 0u;
 
 	std::vector<vk::raii::Semaphore> m_image_available_semaphores;

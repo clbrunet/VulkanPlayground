@@ -55,11 +55,6 @@ Application::Application() {
 	init_vulkan();
 }
 
-Application::~Application() {
-	vmaDestroyBuffer(m_allocator, m_tree64_storage_buffer, m_tree64_storage_buffer_allocation);
-	vmaDestroyAllocator(m_allocator);
-}
-
 void Application::run() {
 	m_window.prepare_event_loop();
 	while (!m_window.should_close()) {
@@ -93,7 +88,7 @@ void Application::init_vulkan() {
 	create_command_pool();
 	create_command_buffers();
 
-	create_tree64_shader_storage_buffer();
+	create_tree64_buffer();
 
 	create_sync_objects();
 }
@@ -278,14 +273,7 @@ void Application::create_device() {
 	m_graphics_queue = m_device.getQueue(queue_family_indices.graphics, 0u);
 	m_present_queue = m_device.getQueue(queue_family_indices.present, 0u);
 
-	auto const allocator_create_info = VmaAllocatorCreateInfo{
-		.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-		.physicalDevice = *m_physical_device,
-		.device = *m_device,
-		.instance = *m_instance,
-		.vulkanApiVersion = VULKAN_API_VERSION,
-	};
-	vmaCreateAllocator(&allocator_create_info, &m_allocator);
+	m_allocator = VmaRaiiAllocator{ VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT, m_physical_device, m_device, m_instance, VULKAN_API_VERSION };
 }
 
 Application::QueueFamilyIndices Application::get_queue_family_indices() const {
@@ -486,7 +474,7 @@ void Application::create_graphics_pipeline() {
 		.pDynamicState = &dynamic_state_create_info,
 		.layout = m_pipeline_layout,
 	};
-	m_graphics_pipeline = vk::raii::Pipeline{ m_device, { nullptr }, create_info };
+	m_graphics_pipeline = vk::raii::Pipeline{ m_device, nullptr, create_info };
 }
 
 vk::raii::ShaderModule Application::create_shader_module(std::string_view const shader) const {
@@ -521,7 +509,7 @@ void Application::create_command_buffers() {
 	m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
 }
 
-void Application::create_tree64_shader_storage_buffer() {
+void Application::create_tree64_buffer() {
 	auto const begin_time = std::chrono::high_resolution_clock::now();
 
 	auto const path = get_asset_path("models/bistro_exterior.glb");
@@ -545,19 +533,16 @@ void Application::create_tree64_shader_storage_buffer() {
 
 	auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 
-	auto const [staging_buffer, staging_buffer_allocation] = create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
-	vmaCopyMemoryToAllocation(m_allocator, reinterpret_cast<void const*>(nodes.data()), staging_buffer_allocation, 0u, buffer_size);
+	auto staging_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO };
+	staging_buffer.copy_memory_to_allocation(reinterpret_cast<void const*>(nodes.data()), 0u, buffer_size);
 
-	std::tie(m_tree64_storage_buffer, m_tree64_storage_buffer_allocation) = create_buffer(buffer_size,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress,
-		0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-	copy_buffer(staging_buffer, m_tree64_storage_buffer, buffer_size);
-
-	vmaDestroyBuffer(m_allocator, staging_buffer, staging_buffer_allocation);
+	m_tree64_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
+		| vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE };
+	copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
 
 	m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
-		.buffer = m_tree64_storage_buffer
+		.buffer = m_tree64_buffer,
 	});
 }
 
@@ -713,95 +698,6 @@ void Application::clean_swapchain() {
 	m_swapchain.clear();
 }
 
-std::tuple<vk::Buffer, VmaAllocation> Application::create_buffer(vk::DeviceSize const size,
-	vk::BufferUsageFlags const usage, VmaAllocationCreateFlags const allocation_flags, VmaMemoryUsage const memory_usage) const {
-	auto const create_info = vk::BufferCreateInfo{
-		.size = size,
-		.usage = usage,
-	};
-	auto const allocation_create_info = VmaAllocationCreateInfo{
-		.flags = allocation_flags,
-		.usage = memory_usage,
-	};
-	auto buffer = VkBuffer{};
-	auto buffer_allocation = VmaAllocation{};
-	vmaCreateBuffer(m_allocator, reinterpret_cast<VkBufferCreateInfo const*>(&create_info),
-		&allocation_create_info, &buffer, &buffer_allocation, nullptr);
-
-	return std::make_tuple(vk::Buffer{ buffer }, buffer_allocation);
-}
-
-void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
-	one_time_commands([=](vk::CommandBuffer const command_buffer) {
-		auto const copy_region = vk::BufferCopy{ .size = size };
-		command_buffer.copyBuffer(src, dst, copy_region);
-	});
-}
-
-void Application::transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image, vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) const {
-	auto memory_barrier = vk::ImageMemoryBarrier2{
-		.oldLayout = old_layout,
-		.newLayout = new_layout,
-		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.image = image,
-		.subresourceRange = vk::ImageSubresourceRange{
-			.aspectMask = vk::ImageAspectFlagBits::eColor,
-			.baseMipLevel = 0u,
-			.levelCount = vk::RemainingMipLevels,
-			.baseArrayLayer = 0u,
-			.layerCount = vk::RemainingArrayLayers,
-		},
-	};
-	if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
-		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
-		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
-	} else if (old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-	} else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eColorAttachmentOptimal) {
-		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
-		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
-	} else if (old_layout == vk::ImageLayout::eColorAttachmentOptimal && new_layout == vk::ImageLayout::ePresentSrcKHR) {
-		memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-		memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eNone;
-		memory_barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
-		memory_barrier.dstAccessMask = vk::AccessFlagBits2::eNone;
-	} else {
-		assert(false && "unsupported image layout transition");
-	}
-
-	command_buffer.pipelineBarrier2(vk::DependencyInfo{
-		.imageMemoryBarrierCount = 1u,
-		.pImageMemoryBarriers = &memory_barrier,
-	});
-}
-
-void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
-	one_time_commands([=](vk::CommandBuffer const command_buffer) {
-		auto const copy_region = vk::BufferImageCopy{
-			.bufferOffset = 0u,
-			.bufferRowLength = 0u,
-			.bufferImageHeight = 0u,
-			.imageSubresource = vk::ImageSubresourceLayers{
-				.aspectMask = vk::ImageAspectFlagBits::eColor,
-				.mipLevel = 0u,
-				.baseArrayLayer = 0u,
-				.layerCount = 1u,
-			},
-			.imageOffset = vk::Offset3D{ 0u, 0u, 0u },
-			.imageExtent = vk::Extent3D{ width, height, 1u },
-		};
-		command_buffer.copyBufferToImage(src, dst, vk::ImageLayout::eTransferDstOptimal, copy_region);
-	});
-}
-
 vk::raii::ImageView Application::create_image_view(vk::Image const image, vk::Format const format) const {
 	auto const create_info = vk::ImageViewCreateInfo{
 		.image = image,
@@ -851,4 +747,30 @@ void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const
 		.pCommandBufferInfos = &command_buffer_submit_info,
 	});
 	m_graphics_queue.waitIdle();
+}
+
+void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
+	one_time_commands([=](vk::CommandBuffer const command_buffer) {
+		auto const copy_region = vk::BufferCopy{ .size = size };
+		command_buffer.copyBuffer(src, dst, copy_region);
+	});
+}
+
+void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
+	one_time_commands([=](vk::CommandBuffer const command_buffer) {
+		auto const copy_region = vk::BufferImageCopy{
+			.bufferOffset = 0u,
+			.bufferRowLength = 0u,
+			.bufferImageHeight = 0u,
+			.imageSubresource = vk::ImageSubresourceLayers{
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.mipLevel = 0u,
+				.baseArrayLayer = 0u,
+				.layerCount = 1u,
+			},
+			.imageOffset = vk::Offset3D{ 0u, 0u, 0u },
+			.imageExtent = vk::Extent3D{ width, height, 1u },
+		};
+		command_buffer.copyBufferToImage(src, dst, vk::ImageLayout::eTransferDstOptimal, copy_region);
+	});
 }

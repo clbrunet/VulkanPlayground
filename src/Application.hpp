@@ -14,105 +14,105 @@
 
 class Application {
 public:
-	Application();
-	Application(Application const&) = delete;
+    Application();
+    Application(Application const&) = delete;
 
-	Application& operator=(Application const&) = delete;
+    Application& operator=(Application const&) = delete;
 
-	void run();
-
-private:
-	void init_window();
-	void init_vulkan();
-
-	void create_instance();
-	static bool has_instance_layer(vk::raii::Context const& context, std::string_view layer_name);
-	static bool has_instance_extension(vk::raii::Context const& context, std::string_view extension_name);
-
-	void create_debug_messenger();
-	static vk::DebugUtilsMessengerCreateInfoEXT get_debug_messenger_create_info();
-	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-		VkDebugUtilsMessageTypeFlagsEXT message_types, VkDebugUtilsMessengerCallbackDataEXT const* callback_data, void* user_data);
-
-	void create_surface();
-
-	void select_physical_device();
-	uint32_t get_physical_device_score(vk::PhysicalDevice physical_device) const;
-
-	struct QueueFamilyIndices {
-		uint32_t graphics;
-		uint32_t present;
-	};
-	void create_device();
-	QueueFamilyIndices get_queue_family_indices() const;
-	static bool has_device_layer(vk::PhysicalDevice physical_device, std::string_view layer_name);
-	static bool has_device_extension(vk::PhysicalDevice physical_device, std::string_view extension_name);
-
-	void create_swapchain();
-	void create_image_views();
-
-	void create_graphics_pipeline();
-	vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
-
-	void create_command_pool();
-	void create_command_buffers();
-
-	void create_tree64_buffer();
-
-	void create_sync_objects();
-
-	void draw_frame();
-	void record_command_buffer(vk::CommandBuffer command_buffer, uint32_t image_index);
-
-	void recreate_swapchain();
-	void clean_swapchain();
-
-	vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
-
-	void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
-
-	void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
-	void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
+    void run();
 
 private:
-	static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
+    void init_window();
+    void init_vulkan();
 
-	Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
-	bool m_should_recreate_swapchain = false;
-	vk::raii::Context m_context;
-	vk::raii::Instance m_instance = nullptr;
-	vk::raii::DebugUtilsMessengerEXT m_debug_messenger = nullptr;
-	vk::raii::SurfaceKHR m_surface = nullptr;
+    void create_instance();
+    static bool has_instance_layer(vk::raii::Context const& context, std::string_view layer_name);
+    static bool has_instance_extension(vk::raii::Context const& context, std::string_view extension_name);
 
-	static constexpr std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
-		vk::KHRSwapchainExtensionName,
-	});
-	vk::raii::PhysicalDevice m_physical_device = nullptr;
-	vk::raii::Device m_device = nullptr;
-	vk::raii::Queue m_graphics_queue = nullptr;
-	vk::raii::Queue m_present_queue = nullptr;
-	VmaRaiiAllocator m_allocator = nullptr;
+    void create_debug_messenger();
+    static vk::DebugUtilsMessengerCreateInfoEXT get_debug_messenger_create_info();
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+        VkDebugUtilsMessageTypeFlagsEXT message_types, VkDebugUtilsMessengerCallbackDataEXT const* callback_data, void* user_data);
 
-	vk::raii::SwapchainKHR m_swapchain = nullptr;
-	std::vector<vk::Image> m_swapchain_images;
-	vk::Format m_swapchain_format = vk::Format::eUndefined;
-	vk::Extent2D m_swapchain_extent;
-	std::vector<vk::raii::ImageView> m_image_views;
+    void create_surface();
 
-	vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-	vk::raii::Pipeline m_graphics_pipeline = nullptr;
+    void select_physical_device();
+    uint32_t get_physical_device_score(vk::PhysicalDevice physical_device) const;
 
-	vk::raii::CommandPool m_command_pool = nullptr;
-	vk::raii::CommandBuffers m_command_buffers = nullptr;
+    struct QueueFamilyIndices {
+        uint32_t graphics;
+        uint32_t present;
+    };
+    void create_device();
+    QueueFamilyIndices get_queue_family_indices() const;
+    static bool has_device_layer(vk::PhysicalDevice physical_device, std::string_view layer_name);
+    static bool has_device_extension(vk::PhysicalDevice physical_device, std::string_view extension_name);
 
-	VmaRaiiBuffer m_tree64_buffer = nullptr;
-	vk::DeviceAddress m_tree64_device_address = 0u;
+    void create_swapchain();
+    void create_image_views();
 
-	std::vector<vk::raii::Semaphore> m_image_available_semaphores;
-	std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
-	std::vector<vk::raii::Fence> m_in_flight_fences;
-	uint8_t m_current_in_flight_frame_index = 0u;
+    void create_graphics_pipeline();
+    vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
 
-	Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
-	uint8_t m_tree64_depth = 0u;
+    void create_command_pool();
+    void create_command_buffers();
+
+    void create_tree64_buffer();
+
+    void create_sync_objects();
+
+    void draw_frame();
+    void record_command_buffer(vk::CommandBuffer command_buffer, uint32_t image_index);
+
+    void recreate_swapchain();
+    void clean_swapchain();
+
+    vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
+
+    void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
+
+    void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
+    void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
+
+private:
+    static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
+
+    Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
+    bool m_should_recreate_swapchain = false;
+    vk::raii::Context m_context;
+    vk::raii::Instance m_instance = nullptr;
+    vk::raii::DebugUtilsMessengerEXT m_debug_messenger = nullptr;
+    vk::raii::SurfaceKHR m_surface = nullptr;
+
+    static constexpr std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
+        vk::KHRSwapchainExtensionName,
+    });
+    vk::raii::PhysicalDevice m_physical_device = nullptr;
+    vk::raii::Device m_device = nullptr;
+    vk::raii::Queue m_graphics_queue = nullptr;
+    vk::raii::Queue m_present_queue = nullptr;
+    VmaRaiiAllocator m_allocator = nullptr;
+
+    vk::raii::SwapchainKHR m_swapchain = nullptr;
+    std::vector<vk::Image> m_swapchain_images;
+    vk::Format m_swapchain_format = vk::Format::eUndefined;
+    vk::Extent2D m_swapchain_extent;
+    std::vector<vk::raii::ImageView> m_image_views;
+
+    vk::raii::PipelineLayout m_pipeline_layout = nullptr;
+    vk::raii::Pipeline m_graphics_pipeline = nullptr;
+
+    vk::raii::CommandPool m_command_pool = nullptr;
+    vk::raii::CommandBuffers m_command_buffers = nullptr;
+
+    VmaRaiiBuffer m_tree64_buffer = nullptr;
+    vk::DeviceAddress m_tree64_device_address = 0u;
+
+    std::vector<vk::raii::Semaphore> m_image_available_semaphores;
+    std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
+    std::vector<vk::raii::Fence> m_in_flight_fences;
+    uint8_t m_current_in_flight_frame_index = 0u;
+
+    Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
+    uint8_t m_tree64_depth = 0u;
 };

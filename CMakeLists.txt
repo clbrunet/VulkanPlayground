@@ -21,6 +21,8 @@ find_package(Vulkan REQUIRED COMPONENTS glslc)
 
 add_subdirectory(ext/VulkanMemoryAllocator SYSTEM)
 
+add_subdirectory(ext/imgui SYSTEM)
+
 add_subdirectory(ext/glm SYSTEM)
 
 add_subdirectory(ext/stb SYSTEM)
@@ -73,6 +75,7 @@ endif()
 add_executable(VulkanPlayground ${SRCS} ${HEADERS})
 
 target_compile_definitions(VulkanPlayground PRIVATE
+    GLFW_INCLUDE_NONE
     GLFW_INCLUDE_VULKAN
     VULKAN_HPP_NO_CONSTRUCTORS
     GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -86,6 +89,7 @@ target_link_libraries(VulkanPlayground PRIVATE
     glfw
     Vulkan::Vulkan
     VulkanMemoryAllocator
+    imgui
     glm
     stb
     assimp

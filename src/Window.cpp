@@ -1,8 +1,8 @@
 #include "Window.hpp"
 
-#include <cstdlib>
+#include <imgui_impl_glfw.h>
+
 #include <cassert>
-#include <algorithm>
 #include <iostream>
 
 Window::Window(char const* const title, uint16_t const width, uint16_t const height) {
@@ -34,7 +34,6 @@ Window::Window(char const* const title, uint16_t const width, uint16_t const hei
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
-    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
 Window::Window(Window&& other) noexcept :
@@ -68,6 +67,10 @@ VkSurfaceKHR Window::create_surface(VkInstance const instance) {
         throw std::runtime_error{ "glfwCreateWindowSurface" };
     }
     return surface;
+}
+
+void Window::init_imgui_for_vulkan() {
+    ImGui_ImplGlfw_InitForVulkan(m_window, true);
 }
 
 bool Window::should_close() const {

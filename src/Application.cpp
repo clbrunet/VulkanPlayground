@@ -3,6 +3,7 @@
 
 #include <glm/ext/scalar_common.hpp>
 #include <glm/gtc/integer.hpp>
+#include <imgui.h>
 
 #include <iostream>
 #include <set>
@@ -50,15 +51,22 @@ static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::pat
     return std::make_optional(std::move(bytes));
 }
 
+constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
+
 Application::Application() {
     init_window();
     init_vulkan();
+    init_imgui();
 }
 
 void Application::run() {
     m_window.prepare_event_loop();
     while (!m_window.should_close()) {
+        m_imgui->begin_frame();
+        ImGui::ShowDemoWindow();
+
         m_camera.update(m_window);
+
         draw_frame();
         m_window.poll_events();
     }
@@ -92,8 +100,6 @@ void Application::init_vulkan() {
 
     create_sync_objects();
 }
-
-constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
 void Application::create_instance() {
     auto const application_info = vk::ApplicationInfo{
@@ -307,23 +313,23 @@ bool Application::has_device_extension(vk::PhysicalDevice physical_device, std::
 void Application::create_swapchain() {
     auto const surface_capabilities = m_physical_device.getSurfaceCapabilitiesKHR(m_surface);
 
-    auto const min_image_count = [&] {
+    auto const min_image_count = std::invoke([&] {
         if (surface_capabilities.maxImageCount == 0u) {
             return surface_capabilities.minImageCount + 1u;
         }
         return std::min(surface_capabilities.minImageCount + 1u, surface_capabilities.maxImageCount);
-    }();
+    });
 
-    auto const surface_format = [&] {
+    auto const surface_format = std::invoke([&] {
         auto const surface_formats = m_physical_device.getSurfaceFormatsKHR(m_surface);
         auto const surface_format_it = std::ranges::find_if(surface_formats, [](vk::SurfaceFormatKHR const device_surface_format) {
             return (device_surface_format.format == vk::Format::eR8G8B8A8Srgb || device_surface_format.format == vk::Format::eB8G8R8A8Srgb)
                 && device_surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
         });
         return (surface_format_it != std::cend(surface_formats)) ? *surface_format_it : surface_formats.front();
-    }();
+    });
 
-    auto const image_extent = [&] {
+    auto const image_extent = std::invoke([&] {
         if (surface_capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return surface_capabilities.currentExtent;
         }
@@ -334,14 +340,14 @@ void Application::create_swapchain() {
             .height = std::clamp(static_cast<uint32_t>(framebuffer_dimensions.y),
                 surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height),
         };
-    }();
+    });
 
-    auto const [sharing_mode, queue_family_index_count] = [&] {
+    auto const [sharing_mode, queue_family_index_count] = std::invoke([&] {
         if (*m_graphics_queue != *m_present_queue) {
             return std::tuple{ vk::SharingMode::eConcurrent, 2u };
         }
         return std::tuple{ vk::SharingMode::eExclusive, 0u };
-    }();
+    });
     auto const physical_device_queue_family_indices = get_queue_family_indices();
     auto const queue_family_indices = std::to_array({
         physical_device_queue_family_indices.graphics,
@@ -372,16 +378,13 @@ void Application::create_swapchain() {
 }
 
 void Application::create_image_views() {
-    std::ranges::transform(m_swapchain_images, std::back_inserter(m_image_views), [&](vk::Image const swapchain_image) {
+    std::ranges::transform(m_swapchain_images, std::back_inserter(m_swapchain_image_views), [&](vk::Image const swapchain_image) {
         return create_image_view(swapchain_image, m_swapchain_format);
     });
 }
 
 void Application::create_graphics_pipeline() {
-    auto const rendering_create_info = vk::PipelineRenderingCreateInfo{
-        .colorAttachmentCount = 1u,
-        .pColorAttachmentFormats = &m_swapchain_format,
-    };
+    auto const rendering_create_info = pipeline_rendering_create_info();
 
     auto const vertex_shader_module = create_shader_module("raytracing.vert");
     auto const vertex_shader_stage_create_info = vk::PipelineShaderStageCreateInfo{
@@ -477,6 +480,13 @@ void Application::create_graphics_pipeline() {
     m_graphics_pipeline = vk::raii::Pipeline{ m_device, nullptr, create_info };
 }
 
+vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() const {
+    return vk::PipelineRenderingCreateInfo{
+        .colorAttachmentCount = 1u,
+        .pColorAttachmentFormats = &m_swapchain_format,
+    };
+}
+
 vk::raii::ShaderModule Application::create_shader_module(std::string_view const shader) const {
     auto const spirv_path = get_spirv_shader_path(shader);
     auto const code = read_binary_file(spirv_path);
@@ -560,6 +570,23 @@ void Application::create_sync_objects() {
     }
 }
 
+void Application::init_imgui() {
+    auto init_info = ImGui_ImplVulkan_InitInfo{
+        .ApiVersion = VULKAN_API_VERSION,
+        .Instance = *m_instance,
+        .PhysicalDevice = *m_physical_device,
+        .Device = *m_device,
+        .QueueFamily = get_queue_family_indices().graphics,
+        .Queue = *m_graphics_queue,
+        .MinImageCount = static_cast<uint32_t>(std::size(m_swapchain_images)),
+        .ImageCount = static_cast<uint32_t>(std::size(m_swapchain_images)),
+        .DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE + 1u,
+        .UseDynamicRendering = true,
+        .PipelineRenderingCreateInfo = static_cast<VkPipelineRenderingCreateInfo>(pipeline_rendering_create_info()),
+    };
+    m_imgui = std::make_unique<ImGuiWrapper>(m_window, init_info);
+}
+
 void Application::draw_frame() {
     auto const& in_flight_fence = m_in_flight_fences[m_current_in_flight_frame_index];
     auto const& image_available_semaphore = m_image_available_semaphores[m_current_in_flight_frame_index];
@@ -601,6 +628,8 @@ void Application::draw_frame() {
         .pSignalSemaphoreInfos = &render_finished_semaphore_submit_info,
     }, in_flight_fence);
 
+    m_imgui->update_windows();
+
     try {
         auto const present_info = vk::PresentInfoKHR{
             .waitSemaphoreCount = 1u,
@@ -629,7 +658,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     transition_image_layout(command_buffer, m_swapchain_images[image_index], vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 
     auto const color_attachment = vk::RenderingAttachmentInfo{
-        .imageView = m_image_views[image_index],
+        .imageView = m_swapchain_image_views[image_index],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eDontCare,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -673,6 +702,8 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
     command_buffer.draw(3u, 1u, 0u, 0u);
 
+    m_imgui->render(command_buffer);
+
     command_buffer.endRendering();
 
     transition_image_layout(command_buffer, m_swapchain_images[image_index], vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR);
@@ -693,7 +724,7 @@ void Application::recreate_swapchain() {
 }
 
 void Application::clean_swapchain() {
-    m_image_views.clear();
+    m_swapchain_image_views.clear();
     m_swapchain_images.clear();
     m_swapchain.clear();
 }

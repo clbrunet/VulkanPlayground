@@ -9,14 +9,18 @@
 class Window {
 public:
     Window(char const* title, uint16_t width, uint16_t height);
-    Window(Window&& other) noexcept;
+
     Window(Window const& other) = delete;
-    Window& operator=(Window const& other) = delete;
+    Window(Window&& other) noexcept;
+
     ~Window();
+
+    Window& operator=(Window const& other) = delete;
 
     void set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> framebuffer_callback);
 
     VkSurfaceKHR create_surface(VkInstance instance);
+    void init_imgui_for_vulkan();
 
     void prepare_event_loop();
     void poll_events();

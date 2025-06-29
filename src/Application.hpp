@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Window.hpp"
+#include "ImGuiWrapper.hpp"
 #include "Camera.hpp"
 #include "vulkan_utils.hpp"
 
@@ -52,6 +53,7 @@ private:
     void create_image_views();
 
     void create_graphics_pipeline();
+    vk::PipelineRenderingCreateInfo pipeline_rendering_create_info() const;
     vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
 
     void create_command_pool();
@@ -60,6 +62,8 @@ private:
     void create_tree64_buffer();
 
     void create_sync_objects();
+
+    void init_imgui();
 
     void draw_frame();
     void record_command_buffer(vk::CommandBuffer command_buffer, uint32_t image_index);
@@ -97,7 +101,7 @@ private:
     std::vector<vk::Image> m_swapchain_images;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     vk::Extent2D m_swapchain_extent;
-    std::vector<vk::raii::ImageView> m_image_views;
+    std::vector<vk::raii::ImageView> m_swapchain_image_views;
 
     vk::raii::PipelineLayout m_pipeline_layout = nullptr;
     vk::raii::Pipeline m_graphics_pipeline = nullptr;
@@ -105,14 +109,17 @@ private:
     vk::raii::CommandPool m_command_pool = nullptr;
     vk::raii::CommandBuffers m_command_buffers = nullptr;
 
+    uint8_t m_tree64_depth = 0u;
     VmaRaiiBuffer m_tree64_buffer = nullptr;
     vk::DeviceAddress m_tree64_device_address = 0u;
 
     std::vector<vk::raii::Semaphore> m_image_available_semaphores;
     std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
     std::vector<vk::raii::Fence> m_in_flight_fences;
+
+    std::unique_ptr<ImGuiWrapper> m_imgui;
+
     uint8_t m_current_in_flight_frame_index = 0u;
 
     Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
-    uint8_t m_tree64_depth = 0u;
 };

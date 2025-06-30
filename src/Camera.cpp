@@ -22,6 +22,18 @@ glm::mat3 const& Camera::rotation() const {
 }
 
 void Camera::update(Window const& window) {
+    if (!window.is_mouse_button_pressed(GLFW_MOUSE_BUTTON_RIGHT)) {
+        if (m_is_free_flying) {
+            m_is_free_flying = false;
+            window.set_cursor_visibility(true);
+        }
+        return;
+    }
+    if (!m_is_free_flying) {
+        m_is_free_flying = true;
+        window.set_cursor_visibility(false);
+        return;
+    }
     m_speed *= glm::pow(1.1f, window.scroll_delta());
     update_position(window);
     update_rotation(window);

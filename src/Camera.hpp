@@ -17,7 +17,8 @@ public:
 private:
     static constexpr float DEGREE_PER_INPUT_SENSITIVITY = 0.25f;
 
-    glm::vec3 m_position;
+    bool m_is_free_flying = false;
+    glm::vec3 m_position = glm::vec3(0.f);
     float m_pitch = 0.f;
     float m_yaw = 0.f;
     glm::mat3 m_rotation;

@@ -63,7 +63,9 @@ void Application::run() {
     m_window.prepare_event_loop();
     while (!m_window.should_close()) {
         m_imgui->begin_frame();
-        ImGui::ShowDemoWindow();
+        ImGui::Begin("GUI");
+        ImGui::Text("Hold right click to move the camera");
+        ImGui::End();
 
         m_camera.update(m_window);
 

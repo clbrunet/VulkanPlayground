@@ -17,6 +17,8 @@ set(GLFW_BUILD_TESTS OFF)
 set(GLFW_BUILD_DOCS OFF)
 add_subdirectory(ext/glfw SYSTEM)
 
+add_subdirectory(ext/nativefiledialog-extended SYSTEM)
+
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
 add_subdirectory(ext/VulkanMemoryAllocator SYSTEM)
@@ -87,6 +89,7 @@ target_compile_options(VulkanPlayground PRIVATE ${VULKAN_PLAYGROUND_FLAGS})
 target_include_directories(VulkanPlayground PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(VulkanPlayground PRIVATE
     glfw
+    nfd
     Vulkan::Vulkan
     VulkanMemoryAllocator
     imgui

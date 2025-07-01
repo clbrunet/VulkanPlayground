@@ -10,3 +10,6 @@
 [submodule "ext/imgui/imgui"]
 	path = ext/imgui/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "ext/nativefiledialog-extended"]
+	path = ext/nativefiledialog-extended
+	url = https://github.com/btzy/nativefiledialog-extended.git

@@ -70,7 +70,7 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
         | aiProcess_MakeLeftHanded | aiProcess_Triangulate | aiProcess_RemoveComponent | aiProcess_PreTransformVertices
         | aiProcess_SortByPType | aiProcess_DropNormals | static_cast<unsigned int>(aiProcess_GenBoundingBoxes));
     if (scene == nullptr) {
-        std::cerr << "Model loading error : " << importer.GetErrorString() << '\n';
+        std::cerr << "Model loading error : " << importer.GetErrorString() << std::endl;
         return false;
     }
     auto const& root_node = *scene->mRootNode;

@@ -6,6 +6,8 @@
 #include <numbers>
 #include <iostream>
 
+namespace vp {
+
 Camera::Camera(glm::vec3 const& position, glm::vec2 euler_angles) :
     m_position{ position },
     m_pitch{ euler_angles.x },
@@ -64,4 +66,6 @@ void Camera::update_rotation(Window const& window) {
     m_pitch = glm::clamp(m_pitch + change.y, -std::numbers::pi_v<float> / 2.f, std::numbers::pi_v<float> / 2.f);
     m_yaw += change.x;
     m_rotation = glm::eulerAngleYX(m_yaw, m_pitch);
+}
+
 }

@@ -3,6 +3,8 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 
+namespace vp {
+
 ImGuiWrapper::ImGuiWrapper(Window& window, ImGui_ImplVulkan_InitInfo& init_info) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -47,4 +49,6 @@ void ImGuiWrapper::render(vk::CommandBuffer const command_buffer) const {
 void ImGuiWrapper::update_windows() const {
     ImGui::UpdatePlatformWindows();
     ImGui::RenderPlatformWindowsDefault();
+}
+
 }

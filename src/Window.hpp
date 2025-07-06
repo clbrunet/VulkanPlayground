@@ -1,10 +1,14 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 
 #include <GLFW/glfw3.h>
+#include <nfd.hpp>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
+
+namespace vp {
 
 class Window {
 public:
@@ -41,8 +45,12 @@ public:
     void set_cursor_visibility(bool cursor_visibility) const;
     [[nodiscard]] glm::vec2 cursor_delta() const;
 
+    [[nodiscard]] std::optional<std::filesystem::path> pick_file(std::span<nfdu8filteritem_t const> filters,
+        std::filesystem::path const& default_path) const;
+
 private:
     GLFWwindow* m_window = nullptr;
+    nfdwindowhandle_t m_native_handle = {};
     std::function<void(uint16_t, uint16_t)> m_framebuffer_size_callback;
     float m_last_time = 0.f;
     float m_delta_time = 0.f;
@@ -50,3 +58,5 @@ private:
     glm::vec2 m_cursor_delta = glm::vec2{ 0.f };
     float m_scroll_delta = 0.f;
 };
+
+}

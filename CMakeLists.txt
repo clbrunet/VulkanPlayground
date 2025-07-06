@@ -2,10 +2,16 @@ cmake_minimum_required(VERSION 3.25)
 
 project(VulkanPlayground VERSION 0.1.0)
 
-if(CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Multi-config types" FORCE)
+get_property(IS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(IS_MULTI_CONFIG)
+    if(NOT CMAKE_CONFIGURATION_TYPES)
+        set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Multi-config build types" FORCE)
+    endif()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>)
 else()
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Single-config build type" FORCE)
+    endif()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
 
@@ -17,6 +23,17 @@ set(GLFW_BUILD_TESTS OFF)
 set(GLFW_BUILD_DOCS OFF)
 add_subdirectory(ext/glfw SYSTEM)
 
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 gtk+-3.0)
+    if(NOT GTK3_FOUND)
+        message(FATAL_ERROR
+            " GTK 3 development package not found.\n"
+            " Please install it on your system.\n"
+            " Debian / Ubuntu : sudo apt install libgtk-3-dev\n"
+        )
+    endif()
+endif()
 add_subdirectory(ext/nativefiledialog-extended SYSTEM)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)

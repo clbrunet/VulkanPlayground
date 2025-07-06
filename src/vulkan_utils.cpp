@@ -81,6 +81,10 @@ void VmaRaiiBuffer::copy_memory_to_allocation(void const* src, vk::DeviceSize of
     vmaCopyMemoryToAllocation(m_allocator, src, m_allocation, offset, size);
 }
 
+void VmaRaiiBuffer::destroy() {
+    *this = VmaRaiiBuffer(nullptr);
+}
+
 void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image,
     vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) {
     auto memory_barrier = vk::ImageMemoryBarrier2{

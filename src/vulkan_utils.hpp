@@ -44,6 +44,7 @@ public:
     operator vk::Buffer();
 
     void copy_memory_to_allocation(void const* src, vk::DeviceSize offset, vk::DeviceSize size);
+    void destroy();
 
 private:
     VmaAllocator m_allocator = nullptr;

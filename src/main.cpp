@@ -5,7 +5,7 @@
 
 int main() {
     try {
-        auto application = Application{};
+        auto application = vp::Application{};
         application.run();
     } catch (std::exception const& e) {
         std::cerr << "Fatal error : " << e.what() << std::endl;

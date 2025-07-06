@@ -4,6 +4,8 @@
 
 #include <imgui_impl_vulkan.h>
 
+namespace vp {
+
 class ImGuiWrapper {
 public:
     ImGuiWrapper(Window& window, ImGui_ImplVulkan_InitInfo& init_info);
@@ -20,3 +22,5 @@ public:
     void render(vk::CommandBuffer command_buffer) const;
     void update_windows() const;
 };
+
+}

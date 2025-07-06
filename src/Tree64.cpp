@@ -7,6 +7,8 @@
 #include <iostream>
 #include <algorithm>
 
+namespace vp {
+
 std::optional<Tree64> Tree64::voxelize_model(std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
     auto const depth = divide_ceil(static_cast<uint8_t>(std::bit_width(max_side_voxel_count - 1u)), uint8_t{ 2u });
     if (depth > MAX_DEPTH) {
@@ -121,4 +123,6 @@ void Tree64::add_voxel(glm::uvec3 const& voxel) {
         }
         parent.children = std::vector<BuildingTree64Node>{};
     }
+}
+
 }

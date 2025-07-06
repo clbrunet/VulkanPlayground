@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+namespace vp {
+
 class Camera {
 public:
     Camera() = delete;
@@ -27,3 +29,5 @@ private:
     void update_position(Window const& window);
     void update_rotation(Window const& window);
 };
+
+}

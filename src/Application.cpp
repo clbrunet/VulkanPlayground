@@ -1,9 +1,9 @@
 #include "Application.hpp"
-#include "Tree64.hpp"
 
 #include <glm/ext/scalar_common.hpp>
 #include <glm/gtc/integer.hpp>
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 
 #include <iostream>
 #include <set>
@@ -16,6 +16,8 @@
 #include <filesystem>
 #include <concepts>
 #include <chrono>
+
+namespace vp {
 
 #ifndef NDEBUG
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
@@ -30,13 +32,23 @@ struct PushConstants {
 };
 
 static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
-    auto path = std::filesystem::path{ SPIRV_SHADERS_DIRECTORY } / shader;
+    auto path = std::filesystem::path(SPIRV_SHADERS_DIRECTORY) / shader;
     path += ".spv";
     return path;
 }
 
 static std::filesystem::path get_asset_path(std::string_view const asset) {
-    return std::filesystem::path{ ASSETS_DIRECTORY } / asset;
+    return std::filesystem::path(ASSETS_DIRECTORY) / asset;
+}
+
+static std::filesystem::path path_from(std::string const& string_path) {
+    auto const u8string = std::u8string(reinterpret_cast<char8_t const*>(std::data(string_path)), std::size(string_path));
+    return std::filesystem::path(u8string);
+}
+
+static std::string string_from(std::filesystem::path const& path) {
+    auto const u8string = path.u8string();
+    return std::string(reinterpret_cast<char const*>(std::data(u8string)), std::size(u8string));
 }
 
 static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::path const& path) {
@@ -54,18 +66,54 @@ static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::pat
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
 Application::Application() {
+    m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
+    // m_model_path_to_import = get_asset_path("models/sponza.vox");
+    start_model_import();
     init_window();
     init_vulkan();
     init_imgui();
+}
+
+Application::~Application() {
+    if (*m_device) {
+        m_device.waitIdle();
+    }
+}
+
+void Application::start_model_import() {
+    m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
+        auto const begin_time = std::chrono::high_resolution_clock::now();
+
+        auto tree64 = std::optional<Tree64>();
+        if (path.extension() == ".vox") {
+            tree64 = Tree64::import_vox(path);
+        } else {
+            tree64 = Tree64::voxelize_model(path, max_side_voxel_count);
+        }
+        if (!tree64.has_value()) {
+            std::cerr << "Cannot import " << path << std::endl;
+            return std::tuple(uint8_t{ 0u }, std::vector<Tree64Node>());
+        }
+
+        auto const import_done_time = std::chrono::high_resolution_clock::now();
+        auto const import_time = std::chrono::duration_cast<std::chrono::duration<float>>(import_done_time - begin_time);
+        std::cout << "import time " << import_time << std::endl;
+
+        auto const nodes = tree64->build_contiguous_nodes();
+
+        std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
+        std::cout << "full time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
+        std::cout << "node count " << nodes.size() << std::endl;
+        return std::tuple(tree64->depth(), nodes);
+    }, m_model_path_to_import, m_max_side_voxel_count_to_import);
 }
 
 void Application::run() {
     m_window.prepare_event_loop();
     while (!m_window.should_close()) {
         m_imgui->begin_frame();
-        ImGui::Begin("GUI");
-        ImGui::Text("Hold right click to move the camera");
-        ImGui::End();
+        update_gui();
+        update_tree64_buffer();
 
         m_camera.update(m_window);
 
@@ -97,8 +145,6 @@ void Application::init_vulkan() {
 
     create_command_pool();
     create_command_buffers();
-
-    create_tree64_buffer();
 
     create_sync_objects();
 }
@@ -180,7 +226,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debug_utils_messenger_callback(
     [[maybe_unused]] VkDebugUtilsMessengerCallbackDataEXT const* const callback_data, [[maybe_unused]] void* user_data) {
     std::cerr << "Vulkan message, " << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity))
         << ", " << vk::to_string(vk::DebugUtilsMessageTypeFlagsEXT{ message_types }) << " : " << callback_data->pMessage << std::endl;
-    return VK_FALSE;
+    return vk::False;
 }
 
 void Application::create_surface() {
@@ -521,43 +567,6 @@ void Application::create_command_buffers() {
     m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
 }
 
-void Application::create_tree64_buffer() {
-    auto const begin_time = std::chrono::high_resolution_clock::now();
-
-    auto const path = get_asset_path("models/bistro_exterior.glb");
-    auto const tree64 = Tree64::voxelize_model(path, 1024);
-    // auto const path = get_asset_path("vox/sponza.vox");
-    // auto const tree64 = Tree64::import_vox(path);
-    if (!tree64.has_value()) {
-        throw std::runtime_error{ "cannot import \"" + path.string() + '"' };
-    }
-    m_tree64_depth = tree64->depth();
-
-    auto const import_done_time = std::chrono::high_resolution_clock::now();
-    auto const import_time = std::chrono::duration_cast<std::chrono::milliseconds>(import_done_time - begin_time);
-    std::cout << "import time " << import_time << std::endl;
-
-    auto const nodes = tree64->build_contiguous_nodes();
-
-    std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
-    std::cout << "full time " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
-    std::cout << "node count " << nodes.size() << std::endl;
-
-    auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
-
-    auto staging_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO };
-    staging_buffer.copy_memory_to_allocation(reinterpret_cast<void const*>(nodes.data()), 0u, buffer_size);
-
-    m_tree64_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
-        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE };
-    copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
-
-    m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
-        .buffer = m_tree64_buffer,
-    });
-}
-
 void Application::create_sync_objects() {
     m_image_available_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
     m_render_finished_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
@@ -587,6 +596,51 @@ void Application::init_imgui() {
         .PipelineRenderingCreateInfo = static_cast<VkPipelineRenderingCreateInfo>(pipeline_rendering_create_info()),
     };
     m_imgui = std::make_unique<ImGuiWrapper>(m_window, init_info);
+}
+
+void Application::update_gui() {
+    ImGui::Begin("GUI");
+    ImGui::Text("Hold right click to move the camera");
+
+    auto model_path_to_import = string_from(m_model_path_to_import);
+    ImGui::SetNextItemWidth(-45.f);
+    if (ImGui::InputText("##model_path_to_import", &model_path_to_import, ImGuiInputTextFlags_ElideLeft)) {
+        m_model_path_to_import = path_from(model_path_to_import);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Open")) {
+        auto const filters = std::array{ nfdu8filteritem_t{ "Models", "vox,glb,gltf" } };
+        auto path = m_window.pick_file(filters, ASSETS_DIRECTORY "/models");
+        if (path.has_value()) {
+            m_model_path_to_import = std::move(path.value());
+        }
+    }
+
+    if (m_model_path_to_import.extension() != ".vox") {
+        auto const min = 4u;
+        auto const max = 4096u;
+        ImGui::DragScalar("Max side voxel count", ImGuiDataType_U32,
+            &m_max_side_voxel_count_to_import, 1.f, &min, &max);
+    }
+
+    if (m_model_import_future.valid()) {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
+    } else if (ImGui::Button("Import")) {
+        start_model_import();
+    }
+    ImGui::End();
+}
+
+void Application::update_tree64_buffer() {
+    if (m_model_import_future.valid()
+        && m_model_import_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        auto [depth, nodes] = m_model_import_future.get();
+        if (depth > 0u) {
+            m_tree64_depth = depth;
+            create_tree64_buffer(nodes);
+        }
+    }
 }
 
 void Application::draw_frame() {
@@ -694,15 +748,18 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     };
     command_buffer.setScissor(0u, scissor);
 
-    auto const push_constants = PushConstants{
-        .camera_position = m_camera.position(),
-        .aspect_ratio = viewport.width / viewport.height,
-        .camera_rotation = m_camera.rotation(),
-        .tree64_depth = m_tree64_depth,
-        .tree64_device_address = m_tree64_device_address,
-    };
-    command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, vk::ArrayProxy<PushConstants const>{ push_constants });
-    command_buffer.draw(3u, 1u, 0u, 0u);
+    if (m_tree64_depth > 0u) {
+        auto const push_constants = PushConstants{
+            .camera_position = m_camera.position(),
+            .aspect_ratio = viewport.width / viewport.height,
+            .camera_rotation = m_camera.rotation(),
+            .tree64_depth = m_tree64_depth,
+            .tree64_device_address = m_tree64_device_address,
+        };
+        command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0u, vk::ArrayProxy<PushConstants const>{ push_constants });
+        command_buffer.draw(3u, 1u, 0u, 0u);
+    }
 
     m_imgui->render(command_buffer);
 
@@ -806,4 +863,24 @@ void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst
         };
         command_buffer.copyBufferToImage(src, dst, vk::ImageLayout::eTransferDstOptimal, copy_region);
     });
+}
+
+void Application::create_tree64_buffer(std::vector<Tree64Node> const& nodes) {
+    auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
+
+    auto staging_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO };
+    staging_buffer.copy_memory_to_allocation(reinterpret_cast<void const*>(nodes.data()), 0u, buffer_size);
+
+    m_device.waitIdle();
+    m_tree64_buffer.destroy();
+    m_tree64_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
+        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE };
+    copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
+
+    m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
+        .buffer = m_tree64_buffer,
+    });
+}
+
 }

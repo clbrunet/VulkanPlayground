@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <optional>
 
+namespace vp {
+
 constexpr uint64_t operator""_u64(unsigned long long const value) {
     return static_cast<uint64_t>(value);
 }
@@ -67,3 +69,5 @@ private:
     uint8_t m_depth;
     BuildingTree64Node m_root_building_node;
 };
+
+}

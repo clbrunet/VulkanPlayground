@@ -1,13 +1,24 @@
 #include "Window.hpp"
 
+#if defined(_WIN32)
+#define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined(__linux__)
+#define GLFW_EXPOSE_NATIVE_X11
+#elif defined(__APPLE__)
+#define GLFW_EXPOSE_NATIVE_COCOA
+#endif
+#include <nfd_glfw3.h>
+
 #include <imgui_impl_glfw.h>
 
 #include <cassert>
 #include <iostream>
 
+namespace vp {
+
 Window::Window(char const* const title, uint16_t const width, uint16_t const height) {
     glfwSetErrorCallback([](int const error, char const* const description) noexcept {
-        std::cerr << "GLFW error " << error << ": " << description << '\n';
+        std::cerr << "GLFW error " << error << ": " << description << std::endl;
     });
     if (!glfwInit()) {
         throw std::runtime_error{ "glfwInit" };
@@ -34,6 +45,10 @@ Window::Window(char const* const title, uint16_t const width, uint16_t const hei
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
+
+    NFD::Init();
+    NFD_GetNativeWindowFromGLFWWindow(m_window, &m_native_handle);
+
 }
 
 Window::Window(Window&& other) noexcept :
@@ -45,6 +60,7 @@ Window::~Window() {
     if (m_window == nullptr) {
         return;
     }
+    NFD::Quit();
     glfwDestroyWindow(m_window);
     glfwTerminate();
 }
@@ -143,4 +159,19 @@ void Window::set_cursor_visibility(bool const cursor_visibility) const {
 
 glm::vec2 Window::cursor_delta() const {
     return m_cursor_delta;
+}
+
+std::optional<std::filesystem::path> Window::pick_file(std::span<nfdu8filteritem_t const> filters,
+    std::filesystem::path const& default_path) const {
+    auto path = NFD::UniquePathU8{};
+    auto const result = NFD::OpenDialog(path, std::data(filters), static_cast<nfdfiltersize_t>(std::size(filters)),
+        std::data(default_path.string()), m_native_handle);
+    if (result == NFD_OKAY) {
+        return std::filesystem::path(reinterpret_cast<char8_t const*>(path.get()));
+    } else if (result != NFD_CANCEL) {
+        std::cerr << NFD::GetError() << std::endl;
+    }
+    return std::nullopt;
+}
+
 }

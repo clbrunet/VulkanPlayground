@@ -1,9 +1,14 @@
 #include "Application.hpp"
 
-#include <stdexcept>
 #include <iostream>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     try {
         auto application = vp::Application{};
         application.run();

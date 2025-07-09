@@ -94,6 +94,7 @@ endif()
 add_executable(VulkanPlayground ${SRCS} ${HEADERS})
 
 target_compile_definitions(VulkanPlayground PRIVATE
+    NOMINMAX
     GLFW_INCLUDE_NONE
     GLFW_INCLUDE_VULKAN
     VULKAN_HPP_NO_CONSTRUCTORS

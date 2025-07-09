@@ -9,10 +9,14 @@ ImGuiWrapper::ImGuiWrapper(Window& window, ImGui_ImplVulkan_InitInfo& init_info)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad
+    auto& io = ImGui::GetIO();
+
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad
         | ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
 
-    ImGui::GetIO().IniFilename = ASSETS_DIRECTORY "/imgui.ini";
+    io.IniFilename = ASSETS_DIRECTORY "/imgui.ini";
+
+    io.Fonts->AddFontFromFileTTF(ASSETS_DIRECTORY "/fonts/NotoSans/NotoSans-VariableFont_wdth,wght.ttf");
 
     // convert colors to linear for an sRGB swapchain format
     for (auto& color : ImGui::GetStyle().Colors) {

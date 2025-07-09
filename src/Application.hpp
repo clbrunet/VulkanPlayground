@@ -63,7 +63,7 @@ private:
 
     void create_graphics_pipeline();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info() const;
-    vk::raii::ShaderModule create_shader_module(std::string_view shader) const;
+    vk::raii::ShaderModule create_shader_module(std::string shader) const;
 
     void create_command_pool();
     void create_command_buffers();

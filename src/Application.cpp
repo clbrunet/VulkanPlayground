@@ -1,4 +1,5 @@
 #include "Application.hpp"
+#include "filesystem.hpp"
 
 #include <glm/ext/scalar_common.hpp>
 #include <glm/gtc/integer.hpp>
@@ -10,7 +11,6 @@
 #include <algorithm>
 #include <limits>
 #include <functional>
-#include <fstream>
 #include <optional>
 #include <span>
 #include <filesystem>
@@ -30,38 +30,6 @@ struct PushConstants {
     uint32_t tree64_depth;
     vk::DeviceAddress tree64_device_address;
 };
-
-static std::filesystem::path get_spirv_shader_path(std::string_view const shader) {
-    auto path = std::filesystem::path(SPIRV_SHADERS_DIRECTORY) / shader;
-    path += ".spv";
-    return path;
-}
-
-static std::filesystem::path get_asset_path(std::string_view const asset) {
-    return std::filesystem::path(ASSETS_DIRECTORY) / asset;
-}
-
-static std::filesystem::path path_from(std::string const& string_path) {
-    auto const u8string = std::u8string(reinterpret_cast<char8_t const*>(std::data(string_path)), std::size(string_path));
-    return std::filesystem::path(u8string);
-}
-
-static std::string string_from(std::filesystem::path const& path) {
-    auto const u8string = path.u8string();
-    return std::string(reinterpret_cast<char const*>(std::data(u8string)), std::size(u8string));
-}
-
-static std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::path const& path) {
-    auto ifstream = std::ifstream{ path, std::ios::ate | std::ios::binary};
-    if (!ifstream) {
-        return std::nullopt;
-    }
-
-    auto bytes = std::vector<uint8_t>(static_cast<size_t>(ifstream.tellg()));
-    ifstream.seekg(0);
-    ifstream.read(reinterpret_cast<char*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
-    return std::make_optional(std::move(bytes));
-}
 
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
@@ -91,7 +59,7 @@ void Application::start_model_import() {
             tree64 = Tree64::voxelize_model(path, max_side_voxel_count);
         }
         if (!tree64.has_value()) {
-            std::cerr << "Cannot import " << path << std::endl;
+            std::cerr << "Cannot import " << string_from(path) << std::endl;
             return std::tuple(uint8_t{ 0u }, std::vector<Tree64Node>());
         }
 
@@ -535,11 +503,11 @@ vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() co
     };
 }
 
-vk::raii::ShaderModule Application::create_shader_module(std::string_view const shader) const {
-    auto const spirv_path = get_spirv_shader_path(shader);
+vk::raii::ShaderModule Application::create_shader_module(std::string shader) const {
+    auto const spirv_path = get_spirv_shader_path(std::move(shader));
     auto const code = read_binary_file(spirv_path);
     if (!code) {
-        throw std::runtime_error{ "cannot read \"" + spirv_path.string() + '"'};
+        throw std::runtime_error{ "cannot read \"" + string_from(spirv_path) + '"'};
     }
 
     auto const create_info = vk::ShaderModuleCreateInfo{
@@ -610,7 +578,7 @@ void Application::update_gui() {
     ImGui::SameLine();
     if (ImGui::SmallButton("Open")) {
         auto const filters = std::array{ nfdu8filteritem_t{ "Models", "vox,glb,gltf" } };
-        auto path = m_window.pick_file(filters, ASSETS_DIRECTORY "/models");
+        auto path = m_window.pick_file(filters, get_asset_path("models"));
         if (path.has_value()) {
             m_model_path_to_import = std::move(path.value());
         }

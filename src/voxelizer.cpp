@@ -1,5 +1,6 @@
 #include "voxelizer.hpp"
 #include "math.hpp"
+#include "filesystem.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -66,7 +67,7 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
         | aiComponent_COLORS | aiComponent_TEXCOORDS | aiComponent_BONEWEIGHTS | aiComponent_ANIMATIONS
         | aiComponent_TEXTURES | aiComponent_LIGHTS | aiComponent_CAMERAS | aiComponent_MATERIALS);
     importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_POINT | aiPrimitiveType_LINE);
-    auto const* const scene = importer.ReadFile(path.string().c_str(), aiProcess_JoinIdenticalVertices
+    auto const* const scene = importer.ReadFile(string_from(path).c_str(), aiProcess_JoinIdenticalVertices
         | aiProcess_MakeLeftHanded | aiProcess_Triangulate | aiProcess_RemoveComponent | aiProcess_PreTransformVertices
         | aiProcess_SortByPType | aiProcess_DropNormals | static_cast<unsigned int>(aiProcess_GenBoundingBoxes));
     if (scene == nullptr) {

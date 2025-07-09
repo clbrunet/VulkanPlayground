@@ -1,4 +1,5 @@
 #include "Window.hpp"
+#include "filesystem.hpp"
 
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -165,9 +166,9 @@ std::optional<std::filesystem::path> Window::pick_file(std::span<nfdu8filteritem
     std::filesystem::path const& default_path) const {
     auto path = NFD::UniquePathU8{};
     auto const result = NFD::OpenDialog(path, std::data(filters), static_cast<nfdfiltersize_t>(std::size(filters)),
-        std::data(default_path.string()), m_native_handle);
+        string_from(default_path).c_str(), m_native_handle);
     if (result == NFD_OKAY) {
-        return std::filesystem::path(reinterpret_cast<char8_t const*>(path.get()));
+        return path_from(path.get());
     } else if (result != NFD_CANCEL) {
         std::cerr << NFD::GetError() << std::endl;
     }

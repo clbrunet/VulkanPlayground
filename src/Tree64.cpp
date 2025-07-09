@@ -1,5 +1,6 @@
 #include "Tree64.hpp"
 #include "math.hpp"
+#include "filesystem.hpp"
 #include "vox.hpp"
 #include "voxelizer.hpp"
 
@@ -31,7 +32,7 @@ std::optional<Tree64> Tree64::import_vox(std::filesystem::path const& path) {
         auto const max = glm::max(4u, max_component(vox_full_size));
         auto depth = divide_ceil(static_cast<uint8_t>(std::bit_width(max - 1u)), uint8_t{ 2u });
         if (depth > Tree64::MAX_DEPTH) {
-            std::cerr << "Vox \"" << path << "\" exceeds the max voxel size " << 1u << (MAX_DEPTH * 2u) << std::endl;
+            std::cerr << "Vox \"" << string_from(path) << "\" exceeds the max voxel size " << 1u << (MAX_DEPTH * 2u) << std::endl;
             return false;
         }
         tree64 = Tree64{ depth };

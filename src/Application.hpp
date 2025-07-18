@@ -41,8 +41,8 @@ private:
 
     void create_debug_messenger();
     static vk::DebugUtilsMessengerCreateInfoEXT get_debug_messenger_create_info();
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-        VkDebugUtilsMessageTypeFlagsEXT message_types, VkDebugUtilsMessengerCallbackDataEXT const* callback_data, void* user_data);
+    static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_utils_messenger_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+        vk::DebugUtilsMessageTypeFlagsEXT message_types, vk::DebugUtilsMessengerCallbackDataEXT const* callback_data, void* user_data);
 
     void create_surface();
 

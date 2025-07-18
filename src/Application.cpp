@@ -189,11 +189,11 @@ vk::DebugUtilsMessengerCreateInfoEXT Application::get_debug_messenger_create_inf
     };
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL Application::debug_utils_messenger_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT const message_severity, VkDebugUtilsMessageTypeFlagsEXT const message_types,
-    [[maybe_unused]] VkDebugUtilsMessengerCallbackDataEXT const* const callback_data, [[maybe_unused]] void* user_data) {
-    std::cerr << "Vulkan message, " << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity))
-        << ", " << vk::to_string(vk::DebugUtilsMessageTypeFlagsEXT{ message_types }) << " : " << callback_data->pMessage << std::endl;
+VKAPI_ATTR vk::Bool32 VKAPI_CALL Application::debug_utils_messenger_callback(
+    vk::DebugUtilsMessageSeverityFlagBitsEXT const message_severity, vk::DebugUtilsMessageTypeFlagsEXT const message_types,
+    vk::DebugUtilsMessengerCallbackDataEXT const* const callback_data, [[maybe_unused]] void* user_data) {
+    std::cerr << "Vulkan message, " << vk::to_string(message_severity)
+        << ", " << vk::to_string(message_types) << " : " << callback_data->pMessage << std::endl;
     return vk::False;
 }
 

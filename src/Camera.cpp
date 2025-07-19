@@ -4,15 +4,14 @@
 #include <glm/gtx/io.hpp>
 
 #include <numbers>
-#include <iostream>
 
 namespace vp {
 
 Camera::Camera(glm::vec3 const& position, glm::vec2 euler_angles) :
-    m_position{ position },
+    m_position(position),
     m_pitch{ euler_angles.x },
     m_yaw{ euler_angles.y },
-    m_rotation{ glm::eulerAngleYX(m_yaw, m_pitch) } {
+    m_rotation(glm::eulerAngleYX(m_yaw, m_pitch)) {
 }
 
 glm::vec3 const& Camera::position() const {
@@ -42,12 +41,12 @@ void Camera::update(Window const& window) {
 }
 
 void Camera::update_position(Window const& window) {
-    auto const direction = glm::vec3{
+    auto const direction = glm::vec3(
         static_cast<float>(window.is_key_pressed(GLFW_KEY_D)) - static_cast<float>(window.is_key_pressed(GLFW_KEY_A)),
         static_cast<float>(window.is_key_pressed(GLFW_KEY_E)) - static_cast<float>(window.is_key_pressed(GLFW_KEY_Q)),
         static_cast<float>(window.is_key_pressed(GLFW_KEY_W)) - static_cast<float>(window.is_key_pressed(GLFW_KEY_S))
-    };
-    if (direction == glm::vec3{ 0.f }) {
+    );
+    if (direction == glm::vec3(0.f)) {
         return;
     }
 

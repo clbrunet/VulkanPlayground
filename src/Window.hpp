@@ -54,8 +54,8 @@ private:
     std::function<void(uint16_t, uint16_t)> m_framebuffer_size_callback;
     float m_last_time = 0.f;
     float m_delta_time = 0.f;
-    glm::vec2 m_last_cursor_position = glm::vec2{ 0.f };
-    glm::vec2 m_cursor_delta = glm::vec2{ 0.f };
+    glm::vec2 m_last_cursor_position = glm::vec2(0.f);
+    glm::vec2 m_cursor_delta = glm::vec2(0.f);
     float m_scroll_delta = 0.f;
 };
 

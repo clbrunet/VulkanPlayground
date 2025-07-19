@@ -128,7 +128,7 @@ void Application::create_instance() {
 
     auto glfw_extension_count = uint32_t{};
     auto const glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-    auto extensions = std::vector<char const*>{ glfw_extensions, glfw_extensions + glfw_extension_count };
+    auto extensions = std::vector<char const*>(glfw_extensions, glfw_extensions + glfw_extension_count);
 
 #ifndef NDEBUG
     if (has_instance_extension(m_context, vk::EXTDebugUtilsExtensionName)) {
@@ -157,7 +157,7 @@ void Application::create_instance() {
         create_info.ppEnabledLayerNames = &VALIDATION_LAYER;
     }
 #endif
-    m_instance = vk::raii::Instance{ m_context, create_info };
+    m_instance = vk::raii::Instance(m_context, create_info);
 }
 
 bool Application::has_instance_layer(vk::raii::Context const& context, std::string_view const layer_name) {
@@ -176,7 +176,7 @@ void Application::create_debug_messenger() {
     if (!m_instance.getProcAddr("vkCreateDebugUtilsMessengerEXT") || !m_instance.getProcAddr("vkDestroyDebugUtilsMessengerEXT")) {
         return;
     }
-    m_debug_messenger = vk::raii::DebugUtilsMessengerEXT{ m_instance, get_debug_messenger_create_info() };
+    m_debug_messenger = vk::raii::DebugUtilsMessengerEXT(m_instance, get_debug_messenger_create_info());
 }
 
 vk::DebugUtilsMessengerCreateInfoEXT Application::get_debug_messenger_create_info() {
@@ -198,7 +198,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Application::debug_utils_messenger_callback(
 }
 
 void Application::create_surface() {
-    m_surface = vk::raii::SurfaceKHR{ m_instance, m_window.create_surface(*m_instance) };
+    m_surface = vk::raii::SurfaceKHR(m_instance, m_window.create_surface(*m_instance));
 }
 
 void Application::select_physical_device() {
@@ -211,7 +211,7 @@ void Application::select_physical_device() {
         }
     }
     if (!*m_physical_device) {
-        throw std::runtime_error{ "no suitable GPU found" };
+        throw std::runtime_error("no suitable GPU found");
     }
     std::cout << "Selected GPU : " << m_physical_device.getProperties().deviceName << std::endl;
 }
@@ -247,12 +247,12 @@ uint32_t Application::get_physical_device_score(vk::PhysicalDevice const physica
 
 void Application::create_device() {
     auto const queue_family_indices = get_queue_family_indices();
-    auto const unique_queue_family_indices = std::set<uint32_t>{
+    auto const unique_queue_family_indices = std::set<uint32_t>({
         queue_family_indices.graphics,
         queue_family_indices.present,
-    };
+    });
     auto const queue_priority = 1.f;
-    auto queue_create_infos = std::vector<vk::DeviceQueueCreateInfo>{};
+    auto queue_create_infos = std::vector<vk::DeviceQueueCreateInfo>();
     std::ranges::transform(unique_queue_family_indices, std::back_inserter(queue_create_infos),
         [&queue_priority](uint32_t const queue_family_index) {
             return vk::DeviceQueueCreateInfo{
@@ -291,11 +291,11 @@ void Application::create_device() {
         create_info.ppEnabledLayerNames = &VALIDATION_LAYER;
     }
 #endif
-    m_device = vk::raii::Device{ m_physical_device, create_info };
+    m_device = vk::raii::Device(m_physical_device, create_info);
     m_graphics_queue = m_device.getQueue(queue_family_indices.graphics, 0u);
     m_present_queue = m_device.getQueue(queue_family_indices.present, 0u);
 
-    m_allocator = VmaRaiiAllocator{ VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT, m_physical_device, m_device, m_instance, VULKAN_API_VERSION };
+    m_allocator = VmaRaiiAllocator(VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT, m_physical_device, m_device, m_instance, VULKAN_API_VERSION);
 }
 
 Application::QueueFamilyIndices Application::get_queue_family_indices() const {
@@ -360,9 +360,9 @@ void Application::create_swapchain() {
 
     auto const [sharing_mode, queue_family_index_count] = std::invoke([&] {
         if (*m_graphics_queue != *m_present_queue) {
-            return std::tuple{ vk::SharingMode::eConcurrent, 2u };
+            return std::tuple(vk::SharingMode::eConcurrent, 2u);
         }
-        return std::tuple{ vk::SharingMode::eExclusive, 0u };
+        return std::tuple(vk::SharingMode::eExclusive, 0u);
     });
     auto const physical_device_queue_family_indices = get_queue_family_indices();
     auto const queue_family_indices = std::to_array({
@@ -387,7 +387,7 @@ void Application::create_swapchain() {
         .clipped = vk::True,
         .oldSwapchain = vk::SwapchainKHR{},
     };
-    m_swapchain = vk::raii::SwapchainKHR{ m_device, create_info };
+    m_swapchain = vk::raii::SwapchainKHR(m_device, create_info);
     m_swapchain_images = m_swapchain.getImages();
     m_swapchain_format = surface_format.format;
     m_swapchain_extent = image_extent;
@@ -476,7 +476,7 @@ void Application::create_graphics_pipeline() {
         .pushConstantRangeCount = static_cast<uint32_t>(std::size(push_contant_ranges)),
         .pPushConstantRanges = std::data(push_contant_ranges),
     };
-    m_pipeline_layout = vk::raii::PipelineLayout{ m_device, pipeline_layout_create_info };
+    m_pipeline_layout = vk::raii::PipelineLayout(m_device, pipeline_layout_create_info);
 
     auto const create_info = vk::GraphicsPipelineCreateInfo{
         .pNext = &rendering_create_info,
@@ -493,7 +493,7 @@ void Application::create_graphics_pipeline() {
         .pDynamicState = &dynamic_state_create_info,
         .layout = m_pipeline_layout,
     };
-    m_graphics_pipeline = vk::raii::Pipeline{ m_device, nullptr, create_info };
+    m_graphics_pipeline = vk::raii::Pipeline(m_device, nullptr, create_info);
 }
 
 vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() const {
@@ -507,7 +507,7 @@ vk::raii::ShaderModule Application::create_shader_module(std::string shader) con
     auto const spirv_path = get_spirv_shader_path(std::move(shader));
     auto const code = read_binary_file(spirv_path);
     if (!code) {
-        throw std::runtime_error{ "cannot read \"" + string_from(spirv_path) + '"'};
+        throw std::runtime_error("cannot read \"" + string_from(spirv_path) + '"');
     }
 
     auto const create_info = vk::ShaderModuleCreateInfo{
@@ -515,7 +515,7 @@ vk::raii::ShaderModule Application::create_shader_module(std::string shader) con
         .pCode = reinterpret_cast<uint32_t const*>(std::data(*code)),
     };
 
-    return vk::raii::ShaderModule{ m_device, create_info };
+    return vk::raii::ShaderModule(m_device, create_info);
 }
 
 void Application::create_command_pool() {
@@ -523,7 +523,7 @@ void Application::create_command_pool() {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = get_queue_family_indices().graphics,
     };
-    m_command_pool = vk::raii::CommandPool{ m_device, create_info };
+    m_command_pool = vk::raii::CommandPool(m_device, create_info);
 }
 
 void Application::create_command_buffers() {
@@ -532,7 +532,7 @@ void Application::create_command_buffers() {
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
     };
-    m_command_buffers = vk::raii::CommandBuffers{ m_device, allocate_info };
+    m_command_buffers = vk::raii::CommandBuffers(m_device, allocate_info);
 }
 
 void Application::create_sync_objects() {
@@ -689,7 +689,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     };
     auto const rendering_info = vk::RenderingInfo{
         .renderArea = vk::Rect2D{
-            .offset = vk::Offset2D{ 0, 0, },
+            .offset = vk::Offset2D{ 0, 0 },
             .extent = m_swapchain_extent,
         },
         .layerCount = 1u,
@@ -725,7 +725,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
             .tree64_device_address = m_tree64_device_address,
         };
         command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0u, vk::ArrayProxy<PushConstants const>{ push_constants });
+            0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
         command_buffer.draw(3u, 1u, 0u, 0u);
     }
 
@@ -776,7 +776,7 @@ vk::raii::ImageView Application::create_image_view(vk::Image const image, vk::Fo
         },
     };
 
-    return vk::raii::ImageView{ m_device, create_info };
+    return vk::raii::ImageView(m_device, create_info);
 }
 
 void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const {
@@ -786,7 +786,7 @@ void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const
         .commandBufferCount = 1u,
     };
 
-    auto const command_buffer = std::move(vk::raii::CommandBuffers{ m_device, command_buffer_allocate_info }.front());
+    auto const command_buffer = std::move(vk::raii::CommandBuffers(m_device, command_buffer_allocate_info).front());
 
     auto const command_buffer_begin_info = vk::CommandBufferBeginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
@@ -836,14 +836,14 @@ void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst
 void Application::create_tree64_buffer(std::vector<Tree64Node> const& nodes) {
     auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 
-    auto staging_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO };
+    auto staging_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
     staging_buffer.copy_memory_to_allocation(reinterpret_cast<void const*>(nodes.data()), 0u, buffer_size);
 
     m_device.waitIdle();
     m_tree64_buffer.destroy();
-    m_tree64_buffer = VmaRaiiBuffer{ m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
-        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE };
+    m_tree64_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
+        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
     copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
 
     m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{

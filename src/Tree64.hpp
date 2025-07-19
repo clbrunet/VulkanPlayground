@@ -10,7 +10,7 @@
 
 namespace vp {
 
-constexpr uint64_t operator""_u64(unsigned long long const value) {
+consteval uint64_t operator""_u64(unsigned long long const value) {
     return static_cast<uint64_t>(value);
 }
 

@@ -22,12 +22,12 @@ Window::Window(char const* const title, uint16_t const width, uint16_t const hei
         std::cerr << "GLFW error " << error << ": " << description << std::endl;
     });
     if (!glfwInit()) {
-        throw std::runtime_error{ "glfwInit" };
+        throw std::runtime_error("glfwInit");
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     m_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (m_window == nullptr) {
-        throw std::runtime_error{ "glfwCreateWindow" };
+        throw std::runtime_error("glfwCreateWindow");
     }
 
     glfwSetWindowUserPointer(m_window, this);
@@ -81,7 +81,7 @@ void Window::set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> fr
 VkSurfaceKHR Window::create_surface(VkInstance const instance) {
     auto surface = VkSurfaceKHR{};
     if (glfwCreateWindowSurface(instance, m_window, nullptr, &surface) != VK_SUCCESS) {
-        throw std::runtime_error{ "glfwCreateWindowSurface" };
+        throw std::runtime_error("glfwCreateWindowSurface");
     }
     return surface;
 }
@@ -117,14 +117,14 @@ glm::ivec2 Window::framebuffer_dimensions() const {
     auto width = 0;
     auto height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
-    return glm::ivec2{ width, height };
+    return glm::ivec2(width, height);
 }
 
 void Window::prepare_event_loop() {
     poll_events();
     m_delta_time = 0.f;
     m_scroll_delta = 0.f;
-    m_cursor_delta = glm::vec2{ 0.f };
+    m_cursor_delta = glm::vec2(0.f);
 }
 
 float Window::time() const {
@@ -151,7 +151,7 @@ glm::vec2 Window::cursor_position() const {
     auto x_position = 0.;
     auto y_position = 0.;
     glfwGetCursorPos(m_window, &x_position, &y_position);
-    return glm::vec2{ x_position, y_position };
+    return glm::vec2(x_position, y_position);
 }
 
 void Window::set_cursor_visibility(bool const cursor_visibility) const {
@@ -164,7 +164,7 @@ glm::vec2 Window::cursor_delta() const {
 
 std::optional<std::filesystem::path> Window::pick_file(std::span<nfdu8filteritem_t const> filters,
     std::filesystem::path const& default_path) const {
-    auto path = NFD::UniquePathU8{};
+    auto path = NFD::UniquePathU8();
     auto const result = NFD::OpenDialog(path, std::data(filters), static_cast<nfdfiltersize_t>(std::size(filters)),
         string_from(default_path).c_str(), m_native_handle);
     if (result == NFD_OKAY) {

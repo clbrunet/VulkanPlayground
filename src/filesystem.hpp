@@ -35,7 +35,7 @@ inline std::filesystem::path get_asset_path(std::string asset) {
 }
 
 inline std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::path const& path) {
-    auto ifstream = std::ifstream{ path, std::ios::ate | std::ios::binary };
+    auto ifstream = std::ifstream(path, std::ios::ate | std::ios::binary);
     if (!ifstream) {
         return std::nullopt;
     }

@@ -10,7 +10,7 @@ int main() {
     SetConsoleOutputCP(CP_UTF8);
 #endif
     try {
-        auto application = vp::Application{};
+        auto application = vp::Application();
         application.run();
     } catch (std::exception const& e) {
         std::cerr << "Fatal error : " << e.what() << std::endl;

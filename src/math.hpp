@@ -31,5 +31,5 @@ inline constexpr T max_component(glm::vec<L, T, Q> const& vec) {
 }
 
 inline constexpr glm::vec3 vec3_from_aivec3(aiVector3D const& vec3) {
-    return glm::vec3{ vec3.x, vec3.y, vec3.z };
+    return glm::vec3(vec3.x, vec3.y, vec3.z);
 }

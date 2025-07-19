@@ -93,7 +93,7 @@ private:
 private:
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
 
-    Window m_window = Window{ "Vulkan Playground", 1280u, 720u };
+    Window m_window = Window("Vulkan Playground", 1280u, 720u);
     bool m_should_recreate_swapchain = false;
     vk::raii::Context m_context;
     vk::raii::Instance m_instance = nullptr;
@@ -136,7 +136,7 @@ private:
 
     uint8_t m_current_in_flight_frame_index = 0u;
 
-    Camera m_camera = Camera{ glm::vec3{ 0.5f, 8.5f, -3.f }, glm::vec2{ 0.f, 0.f } };
+    Camera m_camera = Camera(glm::vec3(0.5f, 8.5f, -3.f), glm::vec2(0.f, 0.f));
 };
 
 }

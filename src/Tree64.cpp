@@ -16,7 +16,7 @@ std::optional<Tree64> Tree64::voxelize_model(std::filesystem::path const& path, 
         std::cerr << "Exceeded the max voxel size " << 1u << (MAX_DEPTH * 2u) << std::endl;
         return std::nullopt;
     }
-    auto tree64 = Tree64{ depth };
+    auto tree64 = Tree64(depth);
     auto const success = ::voxelize_model(path, max_side_voxel_count, [&](glm::uvec3 const& voxel) {
         tree64.add_voxel(voxel);
     });
@@ -35,7 +35,7 @@ std::optional<Tree64> Tree64::import_vox(std::filesystem::path const& path) {
             std::cerr << "Vox \"" << string_from(path) << "\" exceeds the max voxel size " << 1u << (MAX_DEPTH * 2u) << std::endl;
             return false;
         }
-        tree64 = Tree64{ depth };
+        tree64 = Tree64(depth);
         return true;
     }, [&](glm::uvec3 const& voxel) {
         tree64->add_voxel(voxel);
@@ -56,7 +56,7 @@ uint8_t Tree64::depth() const {
 }
 
 std::vector<Tree64Node> Tree64::build_contiguous_nodes() const {
-    auto nodes = std::vector<Tree64Node>{ 1u };
+    auto nodes = std::vector<Tree64Node>(1u);
     auto const build = [&](auto const& self, BuildingTree64Node const& building_node, Tree64Node& node) -> void {
         node.set_is_leaf(building_node.is_leaf());
         node.set_children_mask(building_node.children_mask);
@@ -79,7 +79,7 @@ std::vector<Tree64Node> Tree64::build_contiguous_nodes() const {
 
 void Tree64::add_voxel(glm::uvec3 const& voxel) {
     auto half_size = (1u << (m_depth * 2u)) / 2u;
-    auto post_center = glm::uvec3{ half_size };
+    auto post_center = glm::uvec3(half_size);
     auto hierarchy_index = 0u;
     auto nodes_hierarchy = std::array<BuildingTree64Node*, MAX_DEPTH>{ { &m_root_building_node } };
     while (true) {
@@ -89,7 +89,7 @@ void Tree64::add_voxel(glm::uvec3 const& voxel) {
             | static_cast<uint32_t>(voxel.y >= post_center.y) * 32u
             | static_cast<uint32_t>(voxel.z >= post_center.z) * 8u;
         half_size /= 2u;
-        post_center += half_size * (glm::uvec3{ child_index & 2u, (child_index & 32u) >> 4u, (child_index & 8u) >> 2u } - 1u);
+        post_center += half_size * (glm::uvec3(child_index & 2u, (child_index & 32u) >> 4u, (child_index & 8u) >> 2u) - 1u);
         child_index |= 0u
             | static_cast<uint32_t>(voxel.x >= post_center.x) * 1u
             | static_cast<uint32_t>(voxel.y >= post_center.y) * 16u
@@ -99,7 +99,7 @@ void Tree64::add_voxel(glm::uvec3 const& voxel) {
             break;
         }
         half_size /= 2u;
-        post_center += half_size * (glm::uvec3{ (child_index & 1u) * 2u, (child_index & 16u) >> 3u, (child_index & 4u) >> 1u } - 1u);
+        post_center += half_size * (glm::uvec3((child_index & 1u) * 2u, (child_index & 16u) >> 3u, (child_index & 4u) >> 1u) - 1u);
         if (node.is_leaf()) {
             node.children.resize(64u);
             for (auto i = 0_u64; i < 64_u64; ++i) {
@@ -122,7 +122,7 @@ void Tree64::add_voxel(glm::uvec3 const& voxel) {
         if (!can_merge) {
             break;
         }
-        parent.children = std::vector<BuildingTree64Node>{};
+        parent.children = std::vector<BuildingTree64Node>();
     }
 }
 

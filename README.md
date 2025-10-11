@@ -6,7 +6,7 @@ Voxel traversal and Vulkan Playground
 
 ## Building
 
-First, you'll need to install [Git](https://git-scm.com/downloads), [CMake](https://cmake.org/download/) and the [Vulkan SDK 1.4.313](https://vulkan.lunarg.com/sdk/home).
+First, you'll need to install [Git](https://git-scm.com/downloads), [Git LFS](https://git-lfs.com/), [CMake](https://cmake.org/download/) and the [Vulkan SDK 1.4.313](https://vulkan.lunarg.com/sdk/home).
 
 Open a command prompt and run :
 ```sh
@@ -14,8 +14,9 @@ git clone -j4 --recurse-submodules https://github.com/clbrunet/VulkanPlayground.
 ```
 
 ### Linux using Make
+Install a C++ compiler like clang, [GLFW dependencies](https://www.glfw.org/docs/latest/compile_guide.html#compile_deps) and [Native File Dialog Extended dependencies](https://github.com/btzy/nativefiledialog-extended?tab=readme-ov-file#linux)
 ```sh
-cmake -B build && cmake --build build --parallel 4 && ./build/VulkanPlayground
+cmake -B build -G "Unix Makefiles" && cmake --build build --parallel 4 && ./build/VulkanPlayground
 ```
 
 ### Windows using Visual Studio 2022

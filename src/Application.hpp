@@ -59,7 +59,6 @@ private:
     static bool has_device_extension(vk::PhysicalDevice physical_device, std::string_view extension_name);
 
     void create_swapchain();
-    void create_image_views();
 
     void create_graphics_pipeline();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info() const;
@@ -114,6 +113,7 @@ private:
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     vk::Extent2D m_swapchain_extent;
     std::vector<vk::raii::ImageView> m_swapchain_image_views;
+    std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
 
     vk::raii::PipelineLayout m_pipeline_layout = nullptr;
     vk::raii::Pipeline m_graphics_pipeline = nullptr;
@@ -122,7 +122,6 @@ private:
     vk::raii::CommandBuffers m_command_buffers = nullptr;
 
     std::vector<vk::raii::Semaphore> m_image_available_semaphores;
-    std::vector<vk::raii::Semaphore> m_render_finished_semaphores;
     std::vector<vk::raii::Fence> m_in_flight_fences;
 
     std::unique_ptr<ImGuiWrapper> m_imgui;

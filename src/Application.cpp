@@ -107,7 +107,6 @@ void Application::init_vulkan() {
     create_device();
 
     create_swapchain();
-    create_image_views();
 
     create_graphics_pipeline();
 
@@ -183,8 +182,7 @@ vk::DebugUtilsMessengerCreateInfoEXT Application::get_debug_messenger_create_inf
     return vk::DebugUtilsMessengerCreateInfoEXT{
         .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose
             | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
-            | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
         .pfnUserCallback = debug_utils_messenger_callback,
     };
 }
@@ -391,12 +389,15 @@ void Application::create_swapchain() {
     m_swapchain_images = m_swapchain.getImages();
     m_swapchain_format = surface_format.format;
     m_swapchain_extent = image_extent;
-}
 
-void Application::create_image_views() {
     std::ranges::transform(m_swapchain_images, std::back_inserter(m_swapchain_image_views), [&](vk::Image const swapchain_image) {
         return create_image_view(swapchain_image, m_swapchain_format);
     });
+
+    m_render_finished_semaphores.reserve(std::size(m_swapchain_images));
+    for (auto i = 0u; i < std::size(m_swapchain_images); ++i) {
+        m_render_finished_semaphores.emplace_back(m_device, vk::SemaphoreCreateInfo{});
+    }
 }
 
 void Application::create_graphics_pipeline() {
@@ -537,14 +538,12 @@ void Application::create_command_buffers() {
 
 void Application::create_sync_objects() {
     m_image_available_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-    m_render_finished_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
     m_in_flight_fences.reserve(MAX_FRAMES_IN_FLIGHT);
     auto const in_flight_fence_create_info = vk::FenceCreateInfo{
         .flags = vk::FenceCreateFlagBits::eSignaled,
     };
     for (auto i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         m_image_available_semaphores.emplace_back(m_device, vk::SemaphoreCreateInfo{});
-        m_render_finished_semaphores.emplace_back(m_device, vk::SemaphoreCreateInfo{});
         m_in_flight_fences.emplace_back(m_device, in_flight_fence_create_info);
     }
 }
@@ -613,13 +612,10 @@ void Application::update_tree64_buffer() {
 
 void Application::draw_frame() {
     auto const& in_flight_fence = m_in_flight_fences[m_current_in_flight_frame_index];
-    auto const& image_available_semaphore = m_image_available_semaphores[m_current_in_flight_frame_index];
-    auto const& command_buffer = m_command_buffers[m_current_in_flight_frame_index];
-    auto const& render_finished_semaphore = m_render_finished_semaphores[m_current_in_flight_frame_index];
-
     static_cast<void>(m_device.waitForFences(*in_flight_fence, vk::True, std::numeric_limits<uint64_t>::max()));
 
     auto image_index = uint32_t{};
+    auto const& image_available_semaphore = m_image_available_semaphores[m_current_in_flight_frame_index];
     try {
         image_index = m_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(), image_available_semaphore).second;
     } catch (vk::OutOfDateKHRError const&) {
@@ -629,23 +625,25 @@ void Application::draw_frame() {
 
     m_device.resetFences(*in_flight_fence);
 
+    auto const& command_buffer = m_command_buffers[m_current_in_flight_frame_index];
     command_buffer.reset();
     record_command_buffer(command_buffer, image_index);
 
-    auto const wait_semaphore_submit_info = vk::SemaphoreSubmitInfo{
+    auto const image_available_semaphore_submit_info = vk::SemaphoreSubmitInfo{
         .semaphore = image_available_semaphore,
         .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     };
     auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
         .commandBuffer = command_buffer,
     };
+    auto const& render_finished_semaphore = m_render_finished_semaphores[image_index];
     auto const render_finished_semaphore_submit_info = vk::SemaphoreSubmitInfo{
         .semaphore = render_finished_semaphore,
         .stageMask = vk::PipelineStageFlagBits2::eAllCommands,
     };
     m_graphics_queue.submit2(vk::SubmitInfo2{
         .waitSemaphoreInfoCount = 1u,
-        .pWaitSemaphoreInfos = &wait_semaphore_submit_info,
+        .pWaitSemaphoreInfos = &image_available_semaphore_submit_info,
         .commandBufferInfoCount = 1u,
         .pCommandBufferInfos = &command_buffer_submit_info,
         .signalSemaphoreInfoCount = 1u,
@@ -662,7 +660,7 @@ void Application::draw_frame() {
             .pSwapchains = &*m_swapchain,
             .pImageIndices = &image_index,
         };
-        auto const result = m_graphics_queue.presentKHR(present_info);
+        auto const result = m_present_queue.presentKHR(present_info);
         if (result == vk::Result::eSuboptimalKHR) {
             m_should_recreate_swapchain = true;
         }
@@ -743,14 +741,12 @@ void Application::recreate_swapchain() {
     m_device.waitIdle();
 
     clean_swapchain();
-
     create_swapchain();
-    create_image_views();
-
     m_should_recreate_swapchain = false;
 }
 
 void Application::clean_swapchain() {
+    m_render_finished_semaphores.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
     m_swapchain.clear();

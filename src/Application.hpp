@@ -135,7 +135,7 @@ private:
 
     uint8_t m_current_in_flight_frame_index = 0u;
 
-    Camera m_camera = Camera(glm::vec3(0.5f, 8.5f, -3.f), glm::vec2(0.f, 0.f));
+    Camera m_camera = Camera(glm::vec3(15.1, 3.1, 17.1), glm::radians(glm::vec2(-45.f, 45.f)));
 };
 
 }

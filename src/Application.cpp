@@ -34,8 +34,8 @@ struct PushConstants {
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
 Application::Application() {
-    m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
-    // m_model_path_to_import = get_asset_path("models/sponza.vox");
+    // m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
+    m_model_path_to_import = get_asset_path("models/sponza.vox");
     start_model_import();
     init_window();
     init_vulkan();
@@ -568,6 +568,8 @@ void Application::init_imgui() {
 void Application::update_gui() {
     ImGui::Begin("GUI");
     ImGui::Text("Hold right click to move the camera");
+    ImGui::Text("Average frame time : %f ms (%u FPS)", 1000.f / ImGui::GetIO().Framerate,
+        static_cast<uint32_t>(ImGui::GetIO().Framerate));
 
     auto model_path_to_import = string_from(m_model_path_to_import);
     ImGui::SetNextItemWidth(-45.f);

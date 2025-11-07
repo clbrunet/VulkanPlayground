@@ -1,6 +1,8 @@
 #pragma once
 
 #include <glm/vec3.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/common.hpp>
 #include <assimp/vector3.h>
 
 template<typename T>
@@ -28,6 +30,12 @@ inline constexpr T max_component(glm::vec<L, T, Q> const& vec) {
         }
     }
     return max;
+}
+
+template<typename T>
+inline constexpr T normalized_angle(T radians_angle) {
+    return radians_angle - glm::two_pi<T>()
+        * glm::floor((radians_angle + glm::pi<T>()) / glm::two_pi<T>());
 }
 
 inline constexpr glm::vec3 vec3_from_aivec3(aiVector3D const& vec3) {

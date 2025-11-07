@@ -1,8 +1,9 @@
 #include "Application.hpp"
 #include "filesystem.hpp"
 
-#include <glm/ext/scalar_common.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/integer.hpp>
+#include <glm/ext/scalar_common.hpp>
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 
@@ -567,9 +568,16 @@ void Application::init_imgui() {
 
 void Application::update_gui() {
     ImGui::Begin("GUI");
-    ImGui::Text("Hold right click to move the camera");
     ImGui::Text("Average frame time : %f ms (%u FPS)", 1000.f / ImGui::GetIO().Framerate,
         static_cast<uint32_t>(ImGui::GetIO().Framerate));
+
+    ImGui::Text("Hold right click to move the camera");
+    auto position = m_camera.position();
+    ImGui::DragFloat3("Camera position", glm::value_ptr(position));
+    m_camera.set_position(position);
+    auto degrees_euler_angles = glm::degrees(m_camera.euler_angles());
+    ImGui::DragFloat2("Camera rotation", glm::value_ptr(degrees_euler_angles));
+    m_camera.set_euler_angles(glm::radians(degrees_euler_angles));
 
     auto model_path_to_import = string_from(m_model_path_to_import);
     ImGui::SetNextItemWidth(-45.f);

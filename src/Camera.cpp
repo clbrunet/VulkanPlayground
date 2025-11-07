@@ -1,21 +1,32 @@
 #include "Camera.hpp"
+#include "math.hpp"
 
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/io.hpp>
 
-#include <numbers>
-
 namespace vp {
 
-Camera::Camera(glm::vec3 const& position, glm::vec2 euler_angles) :
-    m_position(position),
-    m_pitch{ euler_angles.x },
-    m_yaw{ euler_angles.y },
-    m_rotation(glm::eulerAngleYX(m_yaw, m_pitch)) {
+Camera::Camera(glm::vec3 const& position, glm::vec2 euler_angles) {
+    set_position(position);
+    set_euler_angles(euler_angles);
 }
 
 glm::vec3 const& Camera::position() const {
     return m_position;
+}
+
+void Camera::set_position(glm::vec3 const& position) {
+    m_position = position;
+}
+
+glm::vec2 Camera::euler_angles() {
+    return glm::vec2(m_pitch, m_yaw);
+}
+
+void Camera::set_euler_angles(glm::vec2 euler_angles) {
+    m_pitch = glm::clamp(normalized_angle(euler_angles.x), -glm::half_pi<float>(), glm::half_pi<float>());
+    m_yaw = normalized_angle(euler_angles.y);
+    m_rotation = glm::eulerAngleYX(m_yaw, m_pitch);
 }
 
 glm::mat3 const& Camera::rotation() const {
@@ -49,7 +60,6 @@ void Camera::update_position(Window const& window) {
     if (direction == glm::vec3(0.f)) {
         return;
     }
-
     auto speed_modifier = 1.f;
     if (window.is_key_pressed(GLFW_KEY_LEFT_SHIFT)) {
         speed_modifier *= 2.f;
@@ -57,14 +67,12 @@ void Camera::update_position(Window const& window) {
     if (window.is_key_pressed(GLFW_KEY_LEFT_ALT)) {
         speed_modifier /= 2.f;
     }
-    m_position += window.delta_time() * m_speed * speed_modifier * (m_rotation * glm::normalize(direction));
+    set_position(m_position + window.delta_time() * m_speed * speed_modifier * (m_rotation * glm::normalize(direction)));
 }
 
 void Camera::update_rotation(Window const& window) {
-    auto const change = glm::radians(DEGREE_PER_INPUT_SENSITIVITY) * window.cursor_delta();
-    m_pitch = glm::clamp(m_pitch + change.y, -std::numbers::pi_v<float> / 2.f, std::numbers::pi_v<float> / 2.f);
-    m_yaw += change.x;
-    m_rotation = glm::eulerAngleYX(m_yaw, m_pitch);
+    auto const change = glm::radians(DEGREE_PER_INPUT_SENSITIVITY) * window.cursor_delta();;
+    set_euler_angles(glm::vec2(m_pitch + change.y, m_yaw + change.x));
 }
 
 }

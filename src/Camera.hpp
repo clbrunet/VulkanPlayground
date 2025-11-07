@@ -12,6 +12,9 @@ public:
     Camera(glm::vec3 const& position, glm::vec2 euler_angles);
 
     [[nodiscard]] glm::vec3 const& position() const;
+    void set_position(glm::vec3 const& position);
+    glm::vec2 euler_angles();
+    void set_euler_angles(glm::vec2 euler_angles);
     [[nodiscard]] glm::mat3 const& rotation() const;
 
     void update(Window const& window);

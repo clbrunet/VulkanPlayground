@@ -190,7 +190,8 @@ struct NewStackElem {//TODO
     vec3 distances;
     uint64_t coords_bit;
     uint node_index;
-    uvec3 node_min;
+    vec3 ray_position;
+    vec3 new_ray_position;
 };
 
 float ray_aabb_intersection(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
@@ -219,27 +220,27 @@ float unchecked_ray_aabb_intersection(const Ray ray, const vec3 aabb_min, const 
     return max(tmin, 0.f);
 }
 
-uint64_t get_coords_bit(uvec3 coords) {
+uint64_t get_coords_bit(vec3 ray_position, uint stack_index) {//TODO rename stackindex or overall improve
     uint64_t bit = 1ul;
-    if (coords.x >= 3u) {
-        bit <<= 3u;
-    } else if (coords.x >= 2u) {
+    uvec3 uint_ray_position = floatBitsToUint(ray_position);
+    uint center_bit = 1u << (22u - (stack_index << 1u));
+    uint quarter_bit = center_bit >> 1u;
+    if ((uint_ray_position.x & center_bit) != 0u) {
         bit <<= 2u;
-    } else if (coords.x >= 1u) {
+    }
+    if ((uint_ray_position.x & quarter_bit) != 0u) {
         bit <<= 1u;
     }
-    if (coords.z >= 3u) {
-        bit <<= 12u;
-    } else if (coords.z >= 2u) {
+    if ((uint_ray_position.z & center_bit) != 0u) {
         bit <<= 8u;
-    } else if (coords.z >= 1u) {
+    }
+    if ((uint_ray_position.z & quarter_bit) != 0u) {
         bit <<= 4u;
     }
-    if (coords.y >= 3u) {
-        bit <<= 48u;
-    } else if (coords.y >= 2u) {
+    if ((uint_ray_position.y & center_bit) != 0u) {
         bit <<= 32u;
-    } else if (coords.y >= 1u) {
+    }
+    if ((uint_ray_position.y & quarter_bit) != 0u) {
         bit <<= 16u;
     }
     return bit;
@@ -287,9 +288,8 @@ void main() {
     const uint64_t FAR_UP_CHILDREN_MASK = 0xFFFF000000000000ul; //       0b11111111'11111111'00000000'00000000'00000000'00000000'00000000'00000000ul
 
     Ray ray = compute_ray();
-    // float t = ray_aabb_intersection(ray, vec3(1.f), vec3(2.f));
-    ray.position = u_camera_position;// TODO
-    float t = ray_aabb_intersection(ray, vec3(0.f), vec3(float(exp4(u_tree64_depth))));
+    vec3 orig_ray_position = ray.position;
+    float t = ray_aabb_intersection(ray, vec3(1.f), vec3(2.f));
     if (t == -1.f) {
         out_color = vec4(0.01f, 0.01f, 0.01f, 1.f);
         return;
@@ -299,21 +299,18 @@ void main() {
     //     out_color = vec4(0.1f, 0.1f, 0.1f, 1.f);
     //     return;
     // }
-    const vec3 distances_step = vec3(
-        length(ray.direction_inverse.x * ray.direction),
-        length(ray.direction_inverse.y * ray.direction),
-        length(ray.direction_inverse.z * ray.direction)
-    );
+    const vec3 distances_step = ray.direction_inverse * 0.25f;
     ray.position += t * ray.direction;
-    // ray.position = clamp(ray.position, vec3(1.f), vec3(1.99999988079071044921875f));
-    uint base_q_size = exp4(u_tree64_depth) >> 2u;
-    vec3 relative_position = ray.position / base_q_size;
-    const uvec3 coords = min(uvec3(relative_position), uvec3(3));
-    const vec3 straight_distances = mix(relative_position - vec3(coords),
-        vec3(coords + uvec3(1u)) - relative_position, vec3(coords_step + 1) / 2.f);
+    ray.position = clamp(ray.position, vec3(1.f), vec3(1.99999988079071044921875f));
+    // uint base_q_size = exp4(u_tree64_depth) >> 2u;
+    // vec3 relative_position = ray.position / base_q_size;
+    const vec3 to_negative_straight_distances = mod(ray.position, 0.25f) / 0.25;
+    //TODO rename straight_distances (its just a fraction or portion because 0,1.f)
+    const vec3 straight_distances = mix(to_negative_straight_distances,//TODO faster seems possible
+        1.f - to_negative_straight_distances, vec3(coords_step + 1u) * 0.5f);//TODO if i duplicate for each variants of coords_step, the can be specialized (fastest)
     uint stack_index = 0u;
     NewStackElem stack[MAX_TREE64_DEPTH];
-    stack[0] = NewStackElem(straight_distances * distances_step, get_coords_bit(coords), 0u, uvec3(0));
+    stack[0] = NewStackElem(straight_distances * distances_step, get_coords_bit(ray.position, 0u), 0u, ray.position, ray.position);
     while (true) {
         // if (stack_index >= u_tree64_depth) {
         //     out_color = vec4(1.f, 1.f, 1.f, 1.f);
@@ -332,6 +329,8 @@ void main() {
         stack[stack_index].distances += vec3(mask) * distances_step;
         stack[stack_index].coords += ivec3(mask) * coords_step;
 #else
+        float distances_step_factor = 1.f / float(1u << (2u * stack_index));
+        float min_distance;
         uint64_t coords_bit = stack[stack_index].coords_bit;
         if (distances.x < distances.y) {
             if (distances.x < distances.z) {
@@ -349,7 +348,8 @@ void main() {
                         stack[stack_index].coords_bit >>= 1ul;
                     }
                 }
-                distances.x += distances_step.x;
+                min_distance = distances.x;
+                distances.x += distances_step_factor * distances_step.x;
             } else {
                 if (coords_step.z == 1) {
                     if ((coords_bit & FAR_BACK_CHILDREN_MASK) != 0ul) {
@@ -365,7 +365,8 @@ void main() {
                         stack[stack_index].coords_bit >>= 4ul;
                     }
                 }
-                distances.z += distances_step.z;
+                min_distance = distances.z;
+                distances.z += distances_step_factor * distances_step.z;
             }
         } else {
             if (distances.z < distances.y) {
@@ -383,7 +384,8 @@ void main() {
                         stack[stack_index].coords_bit >>= 4ul;
                     }
                 }
-                distances.z += distances_step.z;
+                min_distance = distances.z;
+                distances.z += distances_step_factor * distances_step.z;
             } else {
                 if (coords_step.y == 1) {
                     if ((coords_bit & FAR_UP_CHILDREN_MASK) != 0ul) {
@@ -399,34 +401,46 @@ void main() {
                         stack[stack_index].coords_bit >>= 16ul;
                     }
                 }
-                distances.y += distances_step.y;
+                min_distance = distances.y;
+                distances.y += distances_step_factor * distances_step.y;
             }
         }
         stack[stack_index].distances = distances;
 #endif
         const Tree64Node node = u_tree64_nodes_device_address.b_tree64_nodes[stack[stack_index].node_index];
         if ((children_mask(node) & coords_bit) != 0ul) {
-            uvec3 node_min = ivec3(stack[stack_index].node_min);
-            uint q_size = base_q_size >> (stack_index << 1u);
-            node_min += q_size * get_coords_from_coords_bit(coords_bit);
-
             if (!is_leaf(node)) {
-                float t = unchecked_ray_aabb_intersection(ray, vec3(node_min), vec3(node_min + q_size));
-                ray.position += t * ray.direction;
-                vec3 relative_position = (ray.position - node_min) / float(q_size >> 2u);
-                const uvec3 coords = min(uvec3(relative_position), uvec3(3));
-                const vec3 straight_distances = mix(relative_position - vec3(coords),
-                    vec3(coords + uvec3(1u)) - relative_position, vec3(coords_step + 1) / 2.f);
+                const float quarter_size = exp2(-float(4u + 2u * stack_index));
+                vec3 new_ray_position = stack[stack_index].new_ray_position;
+                stack[stack_index].new_ray_position = stack[stack_index].ray_position + min_distance * ray.direction;
+                vec3 ray_position = new_ray_position;
+                vec3 to_negative_straight_distances = mod(ray_position, quarter_size) / quarter_size;
+                if (to_negative_straight_distances.x < 0.00001f && coords_step.x == -1) {
+                    ray_position.x -= quarter_size / 2.f;
+                    to_negative_straight_distances.x = 1.f;
+                }
+                if (to_negative_straight_distances.y < 0.00001f && coords_step.y == -1) {
+                    ray_position.y -= quarter_size / 2.f;
+                    to_negative_straight_distances.y = 1.f;
+                }
+                if (to_negative_straight_distances.z < 0.00001f && coords_step.z == -1) {
+                    ray_position.z -= quarter_size / 2.f;
+                    to_negative_straight_distances.z = 1.f;
+                }
+                const vec3 straight_distances = mix(to_negative_straight_distances,//TODO faster seems possible
+                    1.f - to_negative_straight_distances, vec3(coords_step + 1u) / 2.f);//TODO if I duplicate for each variants for coords_step, the can be specialized (fastest)
                 stack_index += 1u;
-                stack[stack_index] = NewStackElem(straight_distances * distances_step, get_coords_bit(coords),
-                    first_child_node_index(node) + child_bit_node_offset(node, coords_bit), node_min);
+                stack[stack_index] = NewStackElem(straight_distances * (distances_step_factor * 0.25f) * distances_step, get_coords_bit(ray_position, stack_index),
+                    first_child_node_index(node) + child_bit_node_offset(node, coords_bit), new_ray_position, new_ray_position);
                 continue;
             } else {
                 // TODO if leaf maybe call separate function that zoom through voxels
-                out_color = vec4(compute_color(ray, node_min, node_min + q_size), 1.f);
-                // out_color = vec4(vec3(float(i) / 300.f), 1.f);
+                // out_color = vec4(compute_color(ray, node_min, node_min + q_size), 1.f);
+                out_color = vec4(1.f, vec2(distance(stack[stack_index].new_ray_position, orig_ray_position) / 2.f), 1.f);
                 return;
             }
+        } else {
+            stack[stack_index].new_ray_position = stack[stack_index].ray_position + min_distance * ray.direction;
         }
         bool should_break = false;
         while (stack[stack_index].coords_bit == 0ul) {

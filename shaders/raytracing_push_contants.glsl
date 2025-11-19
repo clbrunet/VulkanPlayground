@@ -18,6 +18,13 @@ uint child_node_offset(Tree64Node node, uint child_index) {
     return low_mask_offset + high_mask_offset;
 }
 
+uint child_bit_node_offset(Tree64Node node, uint64_t child_bit) {
+    uint64_t mask = child_bit - 1ul;
+    const uint low_mask_offset = bitCount(uint(mask) & node.down_children_mask);
+    const uint high_mask_offset = bitCount(uint(mask >> 32ul) & node.up_children_mask);
+    return low_mask_offset + high_mask_offset;
+}
+
 bool is_leaf(Tree64Node node) {
     return (node.is_leaf_and_first_child_node_index & 1u) == 1u;
 }

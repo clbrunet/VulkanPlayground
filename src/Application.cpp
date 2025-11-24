@@ -65,7 +65,7 @@ void Application::start_model_import() {
             return std::tuple(uint8_t{ 0u }, std::vector<Tree64Node>());
         }
 #else
-        auto custom_tree64 = Tree64(3u);
+        auto custom_tree64 = Tree64(2u);
         custom_tree64.add_voxel(glm::uvec3(0u, 0u, 0u));
         custom_tree64.add_voxel(glm::uvec3(1u, 1u, 0u));
         custom_tree64.add_voxel(glm::uvec3(0u, 1u, 1u));

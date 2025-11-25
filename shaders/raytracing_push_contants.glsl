@@ -12,14 +12,8 @@ uint64_t children_mask(Tree64Node node) {
     return (uint64_t(node.up_children_mask) << 32ul) | node.down_children_mask;
 }
 
-uint child_node_offset(Tree64Node node, uint child_index) {
-    const uint low_mask_offset = child_index == 0u ? 0u : bitCount(node.down_children_mask << (32u - min(child_index, 32u)));
-    const uint high_mask_offset = child_index <= 32u ? 0u : bitCount(node.up_children_mask << (32u - (child_index - 32u)));
-    return low_mask_offset + high_mask_offset;
-}
-
-uint child_bit_node_offset(Tree64Node node, uint64_t child_bit) {
-    uint64_t mask = child_bit - 1ul;
+uint child_node_offset(const Tree64Node node, const uint64_t child_bit) {
+    const uint64_t mask = child_bit - 1ul;
     const uint low_mask_offset = bitCount(uint(mask) & node.down_children_mask);
     const uint high_mask_offset = bitCount(uint(mask >> 32ul) & node.up_children_mask);
     return low_mask_offset + high_mask_offset;
@@ -28,6 +22,7 @@ uint child_bit_node_offset(Tree64Node node, uint64_t child_bit) {
 bool is_leaf(Tree64Node node) {
     return (node.is_leaf_and_first_child_node_index & 1u) == 1u;
 }
+
 uint first_child_node_index(Tree64Node node) {
     return node.is_leaf_and_first_child_node_index >> 1u;
 }

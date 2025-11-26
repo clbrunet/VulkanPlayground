@@ -94,15 +94,20 @@ void main() {
     }
     const vec3 ray_origin = ray.position;
     ray.position = clamp(ray_origin + t * ray.direction, vec3(1.f), vec3(1.99999988079071044921875f));
+
+    uint node_index_stack[MAX_TREE64_DEPTH];
+    uint node_index = 0u;
+    uint child_scale_bit_offset = 21u;
     while (true) {
-        uint node_index = 0u;
         Tree64Node node = u_tree64_nodes_device_address.b_tree64_nodes[node_index];
-        uint child_scale_bit_offset = 21u;
         uint64_t child_bit = get_child_bit(ray.position, child_scale_bit_offset);
         bool has_child_at_child_bit = (children_mask(node) & child_bit) != 0ul;
         while (has_child_at_child_bit && !is_leaf(node)) {
+            node_index_stack[child_scale_bit_offset >> 1u] = node_index;
+
             node_index = first_child_node_index(node) + child_node_offset(node, child_bit);
             node = u_tree64_nodes_device_address.b_tree64_nodes[node_index];
+
             child_scale_bit_offset -= 2u;
             child_bit = get_child_bit(ray.position, child_scale_bit_offset);
             has_child_at_child_bit = (children_mask(node) & child_bit) != 0ul;
@@ -122,9 +127,15 @@ void main() {
         const vec3 neighbor_max = uintBitsToFloat(floatBitsToUint(neighbor_min) | ((1u << child_scale_bit_offset) - 1u));
         ray.position = clamp(ray_origin + exit_t * ray.direction, neighbor_min, neighbor_max);
 
-        if (ray.position.x <= 1.f || ray.position.y <= 1.f || ray.position.z <= 1.f
-            || 2.f <= ray.position.x || 2.f <= ray.position.y || 2.f <= ray.position.z) {
-            break;
+        const uvec3 binary_diff = floatBitsToUint(ray.position) ^ floatBitsToUint(child_min);
+        // & with 0b11111111101010101010101010101010 to check only for odd offsets (quarter of nodes) and for root exit with the leading 1s
+        const int binary_diff_offset = findMSB((binary_diff.x | binary_diff.y | binary_diff.z) & 0xFFAAAAAAu);
+        if (binary_diff_offset > child_scale_bit_offset) {
+            if (binary_diff_offset > 21u) {
+                break; // out of root
+            }
+            child_scale_bit_offset = binary_diff_offset;
+            node_index = node_index_stack[child_scale_bit_offset >> 1u];
         }
     }
     out_color = vec4(0.f, 0.f, 0.f, 1.f);

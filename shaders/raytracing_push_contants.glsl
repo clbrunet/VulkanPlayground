@@ -27,7 +27,7 @@ uint first_child_node_index(Tree64Node node) {
     return node.is_leaf_and_first_child_node_index >> 1u;
 }
 
-const uint MAX_TREE64_DEPTH = 8u;
+const uint MAX_TREE64_DEPTH = 11u;
 
 layout(std430, buffer_reference) readonly buffer Tree64NodesBuffer {
     Tree64Node b_tree64_nodes[];

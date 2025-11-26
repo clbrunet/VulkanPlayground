@@ -50,6 +50,7 @@ Application::~Application() {
 }
 
 void Application::start_model_import() {
+    // m_camera = Camera(glm::vec3(2.5f, 2.5f, -3.f), glm::radians(glm::vec2(0.f, 0.f)));
     m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
         auto const begin_time = std::chrono::high_resolution_clock::now();
 
@@ -65,13 +66,14 @@ void Application::start_model_import() {
             return std::tuple(uint8_t{ 0u }, std::vector<Tree64Node>());
         }
 #else
-        auto custom_tree64 = Tree64(3u);
+        auto custom_tree64 = Tree64(2u);
         custom_tree64.add_voxel(glm::uvec3(0u, 0u, 0u));
         custom_tree64.add_voxel(glm::uvec3(1u, 1u, 0u));
         custom_tree64.add_voxel(glm::uvec3(0u, 1u, 1u));
         custom_tree64.add_voxel(glm::uvec3(4u, 0u, 0u));
+        custom_tree64.add_voxel(glm::uvec3(0u, 0u, 4u));
         custom_tree64.add_voxel(glm::uvec3(8u, 0u, 0u));
-        custom_tree64.add_voxel(glm::uvec3(32u, 0u, 0u));
+        // custom_tree64.add_voxel(glm::uvec3(32u, 0u, 0u));
         tree64 = custom_tree64;
 #endif
 

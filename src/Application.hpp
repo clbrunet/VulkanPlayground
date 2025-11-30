@@ -127,7 +127,7 @@ private:
     std::unique_ptr<ImGuiWrapper> m_imgui;
 
     std::filesystem::path m_model_path_to_import;
-    uint32_t m_max_side_voxel_count_to_import = 512;
+    uint32_t m_max_side_voxel_count_to_import = 1024;
     std::future<std::tuple<uint8_t, std::vector<Tree64Node>>> m_model_import_future;
     uint8_t m_tree64_depth = 0u;
     VmaRaiiBuffer m_tree64_buffer = nullptr;
@@ -135,7 +135,7 @@ private:
 
     uint8_t m_current_in_flight_frame_index = 0u;
 
-    Camera m_camera = Camera(glm::vec3(15.1f, 3.1f, 17.1f), glm::radians(glm::vec2(-45.f, 45.f)));
+    Camera m_camera = Camera(glm::vec3(200.f, 100.f, 600.f), glm::radians(glm::vec2(0.f, 120.f)));
 };
 
 }

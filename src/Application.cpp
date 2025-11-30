@@ -35,8 +35,8 @@ struct PushConstants {
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
 Application::Application() {
-    // m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
-    m_model_path_to_import = get_asset_path("models/sponza.vox");
+    m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
+    // m_model_path_to_import = get_asset_path("models/sponza.vox");
     start_model_import();
     init_window();
     init_vulkan();
@@ -50,7 +50,6 @@ Application::~Application() {
 }
 
 void Application::start_model_import() {
-    // m_camera = Camera(glm::vec3(2.5f, 2.5f, -3.f), glm::radians(glm::vec2(0.f, 0.f)));
     m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
         auto const begin_time = std::chrono::high_resolution_clock::now();
 
@@ -614,6 +613,9 @@ void Application::update_gui() {
     }
 
     if (m_model_import_future.valid()) {
+#ifndef NDEBUG
+        ImGui::TextColored(ImVec4(1.f, 1.f, 0.f, 1.f), "Importing is slow with a debug build.");
+#endif
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
     } else if (ImGui::Button("Import")) {

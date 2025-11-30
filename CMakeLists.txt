@@ -125,7 +125,7 @@ foreach(SHADER ${SHADERS})
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${RELATIVE_SPIRV_SHADER_DIRECTORY}
         COMMAND ${Vulkan_GLSLC_EXECUTABLE}
-            $<IF:$<CONFIG:Debug>,-O0,-O> $<$<CONFIG:Debug>:-g>
+            --target-env=vulkan1.3 $<IF:$<CONFIG:Debug>,-O0,-O> $<$<CONFIG:Debug>:-g>
             ${RELATIVE_SHADER} -o ${RELATIVE_SPIRV_SHADER}
         MAIN_DEPENDENCY ${SHADER}
     )

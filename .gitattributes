@@ -1,5 +1,8 @@
 *.h linguist-vendored
 *.c linguist-vendored
 
+*.t64 filter=lfs diff=lfs merge=lfs -text
 *.vox filter=lfs diff=lfs merge=lfs -text
 *.glb filter=lfs diff=lfs merge=lfs -text
+*.gltf filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text

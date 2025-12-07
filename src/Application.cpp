@@ -35,8 +35,9 @@ struct PushConstants {
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
 Application::Application() {
-    m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
     // m_model_path_to_import = get_asset_path("models/sponza.vox");
+    // m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
+    m_model_path_to_import = get_asset_path("models/bistro_exterior_8k.t64");
     start_model_import();
     init_window();
     init_vulkan();
@@ -399,6 +400,7 @@ void Application::create_swapchain() {
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
         .presentMode = vk::PresentModeKHR::eFifo,
+        // .presentMode = vk::PresentModeKHR::eImmediate,
         .clipped = vk::True,
         .oldSwapchain = vk::SwapchainKHR{},
     };
@@ -587,7 +589,8 @@ void Application::update_gui() {
     ImGui::Text("Average frame time : %f ms (%u FPS)", 1000.f / ImGui::GetIO().Framerate,
         static_cast<uint32_t>(ImGui::GetIO().Framerate));
 
-    ImGui::Text("Hold right click to move the camera");
+    ImGui::Text("Hold right click to move/rotate the camera");
+    ImGui::Text("Speed is adjustable using mouse wheel and Shift/Alt");
     auto position = m_camera.position();
     ImGui::DragFloat3("Camera position", glm::value_ptr(position));
     m_camera.set_position(position);
@@ -955,7 +958,6 @@ std::optional<ContiguousTree64> Application::import_t64(std::filesystem::path co
     [[maybe_unused]] auto const major_version = read<uint8_t>(ifstream);
     [[maybe_unused]] auto const minor_version = read<uint8_t>(ifstream);
     [[maybe_unused]] auto const patch_version = read<uint16_t>(ifstream);
-    std::cout << (int)major_version << "." << (int)minor_version << "." << (int)patch_version << std::endl;
     auto const depth = read<uint8_t>(ifstream);
     auto const node_count = (file_size - HEADER_SIZE) / sizeof(Tree64Node);
     auto nodes = read<Tree64Node>(ifstream, node_count);

@@ -87,7 +87,9 @@ private:
     void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
     void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
 
-    void create_tree64_buffer(std::vector<Tree64Node> const& nodes);
+    void create_tree64_buffer(std::span<Tree64Node const> nodes);
+    void save_acceleration_structure(std::filesystem::path const& path);
+    static std::optional<ContiguousTree64> import_t64(std::filesystem::path const& path);
 
 private:
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -128,7 +130,7 @@ private:
 
     std::filesystem::path m_model_path_to_import;
     uint32_t m_max_side_voxel_count_to_import = 1024;
-    std::future<std::tuple<uint8_t, std::vector<Tree64Node>>> m_model_import_future;
+    std::future<std::optional<ContiguousTree64>> m_model_import_future;
     uint8_t m_tree64_depth = 0u;
     VmaRaiiBuffer m_tree64_buffer = nullptr;
     vk::DeviceAddress m_tree64_device_address = 0u;

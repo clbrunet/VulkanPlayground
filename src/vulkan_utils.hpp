@@ -40,10 +40,11 @@ public:
     VmaRaiiBuffer& operator=(VmaRaiiBuffer&& other) noexcept;
 
     vk::Buffer operator*();
-
     operator vk::Buffer();
 
-    void copy_memory_to_allocation(void const* src, vk::DeviceSize offset, vk::DeviceSize size);
+    vk::DeviceSize size() const;
+    void copy_memory_to_allocation(uint8_t const* src, vk::DeviceSize offset, vk::DeviceSize size);
+    void copy_allocation_to_memory(vk::DeviceSize offset, std::span<uint8_t> host_dst) const;
     void destroy();
 
 private:

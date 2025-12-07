@@ -11,7 +11,6 @@
 #include <array>
 #include <map>
 #include <vector>
-#include <algorithm>
 #include <charconv>
 #include <unordered_map>
 #include <ranges>
@@ -24,6 +23,13 @@ static Type read(std::istream& istream) {
     Type value;
     istream.read(reinterpret_cast<char*>(&value), sizeof(value));
     return value;
+}
+
+template<typename Type, std::size_t Length>
+std::array<Type, Length> read(std::istream& istream) {
+    std::array<Type, Length> array;
+    istream.read(reinterpret_cast<char*>(std::data(array)), Length * sizeof(Type));
+    return array;
 }
 
 template<>
@@ -48,7 +54,8 @@ Dict read(std::istream& istream) {
 
 static glm::imat3 read_rotation(std::string_view const vox_rotation_str) {
     auto bits = int8_t{};
-    if (std::from_chars(std::data(vox_rotation_str), std::data(vox_rotation_str) + std::size(vox_rotation_str), bits).ec != std::errc{}) {
+    if (std::from_chars(std::data(vox_rotation_str), std::data(vox_rotation_str)
+        + std::size(vox_rotation_str), bits).ec != std::errc{}) {
         assert(false);
     }
     auto const x_index = bits & 0b0000011;
@@ -104,7 +111,7 @@ bool import_vox(std::filesystem::path const& path,
     auto const for_each_chunks = [&ifstream](std::predicate<std::string_view> auto const chunk_consumer) {
         ifstream.seekg(START_IGNORED_BYTE_COUNT);
         while (ifstream.good() && ifstream.peek() != decltype(ifstream)::traits_type::eof()) {
-            auto const chunk_id_letters = read<std::array<char, 4u>>(ifstream);
+            auto const chunk_id_letters = read<char, 4u>(ifstream);
             auto const chunk_id = std::string_view(std::data(chunk_id_letters), std::size(chunk_id_letters));
             auto const chunk_content_size = read<int32_t>(ifstream);
             auto const children_chunks_size = read<int32_t>(ifstream);
@@ -138,18 +145,20 @@ bool import_vox(std::filesystem::path const& path,
                 auto const translation_it = frame_attributes.find("_t");
                 if (translation_it != std::end(frame_attributes)) {
                     // vox uses a x right, z up and y forward coordinates system
-                    std::istringstream(translation_it->second) >> node->m_local_transform[3].x >> node->m_local_transform[3].z >> node->m_local_transform[3].y;
+                    std::istringstream(translation_it->second) >> node->m_local_transform[3].x
+                        >> node->m_local_transform[3].z >> node->m_local_transform[3].y;
                 }
                 auto const rotation_it = frame_attributes.find("_r");
                 if (rotation_it != std::end(frame_attributes)) {
                     auto const vox_rotation = read_rotation(rotation_it->second);
                     // vox uses a x right, z up and y forward coordinates system
-                    constexpr auto vox_to_z_forward_y_up_matrix = glm::imat3(
+                    constexpr auto VOX_TO_Z_FORWARD_Y_UP_MATRIX = glm::imat3(
                         1, 0, 0,
                         0, 0, 1,
                         0, 1, 0
                     );
-                    auto const rotation = glm::transpose(vox_to_z_forward_y_up_matrix) * vox_rotation * vox_to_z_forward_y_up_matrix;
+                    auto const rotation = glm::transpose(VOX_TO_Z_FORWARD_Y_UP_MATRIX)
+                        * vox_rotation * VOX_TO_Z_FORWARD_Y_UP_MATRIX;
                     node->m_local_transform[0] = glm::ivec4(rotation[0], 0);
                     node->m_local_transform[1] = glm::ivec4(rotation[1], 0);
                     node->m_local_transform[2] = glm::ivec4(rotation[2], 0);

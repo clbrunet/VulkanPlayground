@@ -112,7 +112,7 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
             auto const c_coords = glm::ivec3(c);
             dda(b, c, [&](glm::ivec3 const& pos) {
                 auto index = 0u;
-                auto const dest = added_voxels.empty() ? b : pos == c_coords ? c : glm::vec3(pos) + 0.5f;
+                auto const dest = std::empty(added_voxels) ? b : pos == c_coords ? c : glm::vec3(pos) + 0.5f;
                 dda(a, dest, [&](glm::ivec3 const& voxel) {
                     if (index >= added_voxels.size()) {
                         added_voxels.emplace_back(-1);

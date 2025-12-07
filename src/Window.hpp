@@ -48,6 +48,9 @@ public:
     [[nodiscard]] std::optional<std::filesystem::path> pick_file(std::span<nfdu8filteritem_t const> filters,
         std::filesystem::path const& default_path) const;
 
+    [[nodiscard]] std::optional<std::filesystem::path> pick_saving_path(std::span<nfdu8filteritem_t const> filters,
+        std::filesystem::path const& default_path, nfdu8char_t const* default_name = nullptr) const;
+
 private:
     GLFWwindow* m_window = nullptr;
     nfdwindowhandle_t m_native_handle = {};

@@ -77,8 +77,19 @@ VmaRaiiBuffer::operator vk::Buffer() {
     return m_buffer;
 }
 
-void VmaRaiiBuffer::copy_memory_to_allocation(void const* src, vk::DeviceSize offset, vk::DeviceSize size) {
+vk::DeviceSize VmaRaiiBuffer::size() const {
+    auto allocation_info = VmaAllocationInfo{};
+    vmaGetAllocationInfo(m_allocator, m_allocation, &allocation_info);
+    return allocation_info.size;
+}
+
+void VmaRaiiBuffer::copy_memory_to_allocation(uint8_t const* const src,
+    vk::DeviceSize const offset, vk::DeviceSize const size) {
     vmaCopyMemoryToAllocation(m_allocator, src, m_allocation, offset, size);
+}
+
+void VmaRaiiBuffer::copy_allocation_to_memory(vk::DeviceSize const offset, std::span<uint8_t> const host_dst) const {
+    vmaCopyAllocationToMemory(m_allocator, m_allocation, offset, std::data(host_dst), std::size(host_dst));
 }
 
 void VmaRaiiBuffer::destroy() {

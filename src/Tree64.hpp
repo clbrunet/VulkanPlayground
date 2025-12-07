@@ -42,6 +42,11 @@ struct Tree64Node {
 };
 static_assert(sizeof(Tree64Node) == 12u);
 
+struct ContiguousTree64 {
+    uint8_t depth;
+    std::vector<Tree64Node> nodes;
+};
+
 struct BuildingTree64Node {
     uint64_t children_mask = 0u; // (1 0 0) -> 0b1, (0 0 1) -> 0b10000, (0 1 0) -> 0b1'00000000'00000000
     std::vector<BuildingTree64Node> children;

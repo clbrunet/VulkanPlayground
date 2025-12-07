@@ -50,19 +50,23 @@ Application::~Application() {
 }
 
 void Application::start_model_import() {
-    m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
+    m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count)
+        -> std::optional<ContiguousTree64> {
         auto const begin_time = std::chrono::high_resolution_clock::now();
 
         auto tree64 = std::optional<Tree64>();
 #if 1
-        if (path.extension() == ".vox") {
+        if (path.extension() == ".t64") {
+            return import_t64(path);
+        }
+        else if (path.extension() == ".vox") {
             tree64 = Tree64::import_vox(path);
         } else {
             tree64 = Tree64::voxelize_model(path, max_side_voxel_count);
         }
         if (!tree64.has_value()) {
             std::cerr << "Cannot import " << string_from(path) << std::endl;
-            return std::tuple(uint8_t{ 0u }, std::vector<Tree64Node>());
+            return std::nullopt;
         }
 #else
         auto custom_tree64 = Tree64(2u);
@@ -85,7 +89,7 @@ void Application::start_model_import() {
         std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
         std::cout << "full time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
         std::cout << "node count " << nodes.size() << std::endl;
-        return std::tuple(tree64->depth(), nodes);
+        return ContiguousTree64{ .depth = tree64->depth(), .nodes = nodes };
     }, m_model_path_to_import, m_max_side_voxel_count_to_import);
 }
 
@@ -598,14 +602,14 @@ void Application::update_gui() {
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("Open")) {
-        auto const filters = std::array{ nfdu8filteritem_t{ "Models", "vox,glb,gltf" } };
+        auto const filters = std::array{ nfdu8filteritem_t{ "Models", "t64,vox,glb,gltf" } };
         auto path = m_window.pick_file(filters, get_asset_path("models"));
         if (path.has_value()) {
             m_model_path_to_import = std::move(path.value());
         }
     }
 
-    if (m_model_path_to_import.extension() != ".vox") {
+    if (m_model_path_to_import.extension() != ".t64" && m_model_path_to_import.extension() != ".vox") {
         auto const min = 4u;
         auto const max = 4096u;
         ImGui::DragScalar("Max side voxel count", ImGuiDataType_U32,
@@ -620,6 +624,12 @@ void Application::update_gui() {
         ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
     } else if (ImGui::Button("Import")) {
         start_model_import();
+    } else if (m_tree64_device_address != 0u && ImGui::Button("Save acceleration structure")) {
+        auto const filters = std::array{ nfdu8filteritem_t{ "Tree64", "t64" } };
+        auto const path = m_window.pick_saving_path(filters, get_asset_path("models"));
+        if (path.has_value()) {
+            save_acceleration_structure(path.value());
+        }
     }
     ImGui::End();
 }
@@ -627,10 +637,10 @@ void Application::update_gui() {
 void Application::update_tree64_buffer() {
     if (m_model_import_future.valid()
         && m_model_import_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        auto [depth, nodes] = m_model_import_future.get();
-        if (depth > 0u) {
-            m_tree64_depth = depth;
-            create_tree64_buffer(nodes);
+        auto contiguous_tree64 = m_model_import_future.get();
+        if (contiguous_tree64.has_value()) {
+            m_tree64_depth = contiguous_tree64->depth;
+            create_tree64_buffer(contiguous_tree64->nodes);
         }
     }
 }
@@ -854,22 +864,102 @@ void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst
     });
 }
 
-void Application::create_tree64_buffer(std::vector<Tree64Node> const& nodes) {
+void Application::create_tree64_buffer(std::span<Tree64Node const> const nodes) {
     auto const buffer_size = std::size(nodes) * sizeof(nodes[0]);
 
     auto staging_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
-    staging_buffer.copy_memory_to_allocation(reinterpret_cast<void const*>(nodes.data()), 0u, buffer_size);
+    staging_buffer.copy_memory_to_allocation(reinterpret_cast<uint8_t const*>(std::data(nodes)), 0u, buffer_size);
 
     m_device.waitIdle();
     m_tree64_buffer.destroy();
     m_tree64_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
-        | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+        | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferSrc,
+        0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
     copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
 
     m_tree64_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
         .buffer = m_tree64_buffer,
     });
+}
+
+constexpr auto FILE_SIGNATURE = std::string_view("T64");
+constexpr auto FILE_SIGNATURE_SIZE = std::size(FILE_SIGNATURE);
+constexpr auto FILE_VERSION_SIZE = 4u;
+constexpr auto HEADER_SIZE = FILE_SIGNATURE_SIZE + FILE_VERSION_SIZE + 1u;
+
+void Application::save_acceleration_structure(std::filesystem::path const& path) {
+    auto const buffer_size = m_tree64_buffer.size();
+
+    auto t64_bytes = std::vector<uint8_t>(HEADER_SIZE + buffer_size);
+    std::ranges::copy(std::string_view(FILE_SIGNATURE), std::begin(t64_bytes));
+    t64_bytes[3u] = uint8_t{ 0u }; // major version number
+    t64_bytes[4u] = uint8_t{ 1u }; // minor version number
+    constexpr auto PATCH_VERSION = uint16_t{ 0u };
+    t64_bytes[5u] = static_cast<uint8_t>(PATCH_VERSION >> 8u);
+    t64_bytes[6u] = static_cast<uint8_t>(PATCH_VERSION);
+    t64_bytes[7u] = m_tree64_depth;
+
+    auto dst_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
+    copy_buffer(m_tree64_buffer, dst_buffer, buffer_size);
+    dst_buffer.copy_allocation_to_memory(0u, std::span(std::data(t64_bytes) + HEADER_SIZE, buffer_size));
+
+    if (!write_binary_file(path, t64_bytes)) {
+        std::cerr << "Cannot save acceleration structure to " << string_from(path) << std::endl;
+    }
+}
+
+// TODO: DRY
+template<typename Type>
+static Type read(std::istream& istream) {
+    Type value;
+    istream.read(reinterpret_cast<char*>(&value), sizeof(value));
+    return value;
+}
+
+template<>
+uint16_t read(std::istream& istream) {
+    auto const high_byte = read<uint8_t>(istream);
+    auto const low_byte = read<uint8_t>(istream);
+    return static_cast<uint16_t>(high_byte << 8u | low_byte);
+}
+
+template<typename Type, std::size_t Length>
+std::array<Type, Length> read(std::istream& istream) {
+    std::array<Type, Length> array;
+    istream.read(reinterpret_cast<char*>(std::data(array)), Length * sizeof(Type));
+    return array;
+}
+
+template<typename Type>
+static std::vector<Type> read(std::istream& istream, size_t count) {
+    auto vector = std::vector<Type>(count);
+    istream.read(reinterpret_cast<char*>(std::data(vector)), static_cast<std::streamsize>(count * sizeof(Type)));
+    return vector;
+}
+
+std::optional<ContiguousTree64> Application::import_t64(std::filesystem::path const& path) {
+    auto ifstream = std::ifstream(path, std::ios::ate | std::ios::binary);
+    if (!ifstream) {
+        std::cerr << "Cannot open " << string_from(path) << std::endl;
+        return std::nullopt;
+    }
+    auto const file_size = static_cast<uint64_t>(ifstream.tellg());
+    ifstream.seekg(0);
+    auto const signature = read<char, FILE_SIGNATURE_SIZE>(ifstream);
+    if (std::string_view(std::begin(signature), std::end(signature)) != FILE_SIGNATURE) {
+        std::cerr << "Cannot import " << string_from(path) << std::endl;
+        return std::nullopt;
+    }
+    [[maybe_unused]] auto const major_version = read<uint8_t>(ifstream);
+    [[maybe_unused]] auto const minor_version = read<uint8_t>(ifstream);
+    [[maybe_unused]] auto const patch_version = read<uint16_t>(ifstream);
+    std::cout << (int)major_version << "." << (int)minor_version << "." << (int)patch_version << std::endl;
+    auto const depth = read<uint8_t>(ifstream);
+    auto const node_count = (file_size - HEADER_SIZE) / sizeof(Tree64Node);
+    auto nodes = read<Tree64Node>(ifstream, node_count);
+    return ContiguousTree64{ .depth = depth, .nodes = std::move(nodes) };
 }
 
 }

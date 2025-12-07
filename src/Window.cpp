@@ -175,4 +175,17 @@ std::optional<std::filesystem::path> Window::pick_file(std::span<nfdu8filteritem
     return std::nullopt;
 }
 
+std::optional<std::filesystem::path> Window::pick_saving_path(std::span<nfdu8filteritem_t const> filters,
+    std::filesystem::path const& default_path, nfdu8char_t const* default_name) const {
+    auto path = NFD::UniquePathU8();
+    auto const result = NFD::SaveDialog(path, std::data(filters), static_cast<nfdfiltersize_t>(std::size(filters)),
+        string_from(default_path).c_str(), default_name, m_native_handle);
+    if (result == NFD_OKAY) {
+        return path_from(path.get());
+    } else if (result != NFD_CANCEL) {
+        std::cerr << NFD::GetError() << std::endl;
+    }
+    return std::nullopt;
+}
+
 }

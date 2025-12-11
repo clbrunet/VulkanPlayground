@@ -14,6 +14,7 @@ consteval uint64_t operator""_u64(unsigned long long const value) {
     return static_cast<uint64_t>(value);
 }
 
+#pragma pack(push, 1)
 struct Tree64Node {
     uint32_t up_children_mask = 0u; //   (1 2 0) -> 0b1, (0 2 1) -> 0b10000, (0 3 0) -> 0b1'00000000'00000000
     uint32_t down_children_mask = 0u; // (1 0 0) -> 0b1, (0 0 1) -> 0b10000, (0 1 0) -> 0b1'00000000'00000000
@@ -40,7 +41,7 @@ struct Tree64Node {
         is_leaf_and_first_child_node_index = (is_leaf_and_first_child_node_index & 1u) | (first_child_node_index << 1u);
     }
 };
-static_assert(sizeof(Tree64Node) == 12u);
+#pragma pack(pop)
 
 struct ContiguousTree64 {
     uint8_t depth;

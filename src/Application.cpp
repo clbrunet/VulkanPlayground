@@ -1,5 +1,6 @@
 #include "Application.hpp"
 #include "filesystem.hpp"
+#include "t64.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/integer.hpp>
@@ -24,6 +25,7 @@ namespace vp {
 constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 #endif
 
+#pragma pack(push, 1)
 struct PushConstants {
     glm::vec3 camera_position;
     float aspect_ratio;
@@ -31,6 +33,7 @@ struct PushConstants {
     uint32_t tree64_depth;
     vk::DeviceAddress tree64_device_address;
 };
+#pragma pack(pop)
 
 constexpr auto VULKAN_API_VERSION = vk::ApiVersion13;
 
@@ -50,48 +53,56 @@ Application::~Application() {
     }
 }
 
-void Application::start_model_import() {
-    m_model_import_future = std::async([] (std::filesystem::path const& path, uint32_t const max_side_voxel_count)
-        -> std::optional<ContiguousTree64> {
-        auto const begin_time = std::chrono::high_resolution_clock::now();
-
-        auto tree64 = std::optional<Tree64>();
+std::optional<ContiguousTree64> model_import(std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
 #if 1
-        if (path.extension() == ".t64") {
-            return import_t64(path);
-        }
-        else if (path.extension() == ".vox") {
-            tree64 = Tree64::import_vox(path);
-        } else {
-            tree64 = Tree64::voxelize_model(path, max_side_voxel_count);
-        }
-        if (!tree64.has_value()) {
+    if (path.extension() == ".t64") {
+        auto const contiguous_tree64 = import_t64(path);
+        if (!contiguous_tree64.has_value()) {
             std::cerr << "Cannot import " << string_from(path) << std::endl;
             return std::nullopt;
         }
+        return std::move(contiguous_tree64.value());
+    }
+    auto const begin_time = std::chrono::high_resolution_clock::now();
+    auto tree64 = std::optional<Tree64>();
+    if (path.extension() == ".vox") {
+        tree64 = Tree64::import_vox(path);
+    } else {
+        tree64 = Tree64::voxelize_model(path, max_side_voxel_count);
+    }
+    if (!tree64.has_value()) {
+        std::cerr << "Cannot import " << string_from(path) << std::endl;
+        return std::nullopt;
+    }
 #else
-        auto custom_tree64 = Tree64(2u);
-        custom_tree64.add_voxel(glm::uvec3(0u, 0u, 0u));
-        custom_tree64.add_voxel(glm::uvec3(1u, 1u, 0u));
-        custom_tree64.add_voxel(glm::uvec3(0u, 1u, 1u));
-        custom_tree64.add_voxel(glm::uvec3(4u, 0u, 0u));
-        custom_tree64.add_voxel(glm::uvec3(0u, 0u, 4u));
-        custom_tree64.add_voxel(glm::uvec3(8u, 0u, 0u));
-        // custom_tree64.add_voxel(glm::uvec3(32u, 0u, 0u));
-        tree64 = custom_tree64;
+    auto const begin_time = std::chrono::high_resolution_clock::now();
+    auto tree64 = std::make_optional(Tree64(2u));
+    tree64->add_voxel(glm::uvec3(0u, 0u, 0u));
+    tree64->add_voxel(glm::uvec3(1u, 1u, 0u));
+    tree64->add_voxel(glm::uvec3(0u, 1u, 1u));
+    tree64->add_voxel(glm::uvec3(4u, 0u, 0u));
+    tree64->add_voxel(glm::uvec3(0u, 0u, 4u));
+    tree64->add_voxel(glm::uvec3(8u, 0u, 0u));
+    // tree64->add_voxel(glm::uvec3(32u, 0u, 0u));
 #endif
 
-        auto const import_done_time = std::chrono::high_resolution_clock::now();
-        auto const import_time = std::chrono::duration_cast<std::chrono::duration<float>>(import_done_time - begin_time);
-        std::cout << "import time " << import_time << std::endl;
+    auto const import_done_time = std::chrono::high_resolution_clock::now();
+    auto const import_time = import_done_time - begin_time;
+    std::cout << "import time " << std::chrono::duration_cast<std::chrono::duration<float>>(import_time) << std::endl;
 
-        auto const nodes = tree64->build_contiguous_nodes();
+    auto const nodes = tree64->build_contiguous_nodes();
 
-        std::cout << "build contiguous time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - import_done_time) << std::endl;
-        std::cout << "full time " << std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - begin_time) << std::endl;
-        std::cout << "node count " << nodes.size() << std::endl;
-        return ContiguousTree64{ .depth = tree64->depth(), .nodes = nodes };
-    }, m_model_path_to_import, m_max_side_voxel_count_to_import);
+    auto const build_contiguous_time = std::chrono::high_resolution_clock::now() - import_done_time;
+    auto const full_time = std::chrono::high_resolution_clock::now() - begin_time;
+    std::cout << "build contiguous time "
+        << std::chrono::duration_cast<std::chrono::duration<float>>(build_contiguous_time) << std::endl;
+    std::cout << "full time " << std::chrono::duration_cast<std::chrono::duration<float>>(full_time) << std::endl;
+    std::cout << "node count " << nodes.size() << std::endl;
+    return ContiguousTree64{ .depth = tree64->depth(), .nodes = nodes };
+}
+
+void Application::start_model_import() {
+    m_model_import_future = std::async(model_import, m_model_path_to_import, m_max_side_voxel_count_to_import);
 }
 
 void Application::run() {
@@ -886,82 +897,16 @@ void Application::create_tree64_buffer(std::span<Tree64Node const> const nodes) 
     });
 }
 
-constexpr auto FILE_SIGNATURE = std::string_view("T64");
-constexpr auto FILE_SIGNATURE_SIZE = std::size(FILE_SIGNATURE);
-constexpr auto FILE_VERSION_SIZE = 4u;
-constexpr auto HEADER_SIZE = FILE_SIGNATURE_SIZE + FILE_VERSION_SIZE + 1u;
-
 void Application::save_acceleration_structure(std::filesystem::path const& path) {
     auto const buffer_size = m_tree64_buffer.size();
-
-    auto t64_bytes = std::vector<uint8_t>(HEADER_SIZE + buffer_size);
-    std::ranges::copy(std::string_view(FILE_SIGNATURE), std::begin(t64_bytes));
-    t64_bytes[3u] = uint8_t{ 0u }; // major version number
-    t64_bytes[4u] = uint8_t{ 1u }; // minor version number
-    constexpr auto PATCH_VERSION = uint16_t{ 0u };
-    t64_bytes[5u] = static_cast<uint8_t>(PATCH_VERSION >> 8u);
-    t64_bytes[6u] = static_cast<uint8_t>(PATCH_VERSION);
-    t64_bytes[7u] = m_tree64_depth;
-
     auto dst_buffer = VmaRaiiBuffer(m_allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
     copy_buffer(m_tree64_buffer, dst_buffer, buffer_size);
-    dst_buffer.copy_allocation_to_memory(0u, std::span(std::data(t64_bytes) + HEADER_SIZE, buffer_size));
-
-    if (!write_binary_file(path, t64_bytes)) {
+    auto nodes = std::vector<Tree64Node>(buffer_size / sizeof(Tree64Node));
+    dst_buffer.copy_allocation_to_memory(0u, std::span(reinterpret_cast<uint8_t*>(std::data(nodes)), buffer_size));
+    if (!save_t64(path, ContiguousTree64{ .depth = m_tree64_depth, .nodes = std::move(nodes) })) {
         std::cerr << "Cannot save acceleration structure to " << string_from(path) << std::endl;
     }
-}
-
-// TODO: DRY
-template<typename Type>
-static Type read(std::istream& istream) {
-    Type value;
-    istream.read(reinterpret_cast<char*>(&value), sizeof(value));
-    return value;
-}
-
-template<>
-uint16_t read(std::istream& istream) {
-    auto const high_byte = read<uint8_t>(istream);
-    auto const low_byte = read<uint8_t>(istream);
-    return static_cast<uint16_t>(high_byte << 8u | low_byte);
-}
-
-template<typename Type, std::size_t Length>
-std::array<Type, Length> read(std::istream& istream) {
-    std::array<Type, Length> array;
-    istream.read(reinterpret_cast<char*>(std::data(array)), Length * sizeof(Type));
-    return array;
-}
-
-template<typename Type>
-static std::vector<Type> read(std::istream& istream, size_t count) {
-    auto vector = std::vector<Type>(count);
-    istream.read(reinterpret_cast<char*>(std::data(vector)), static_cast<std::streamsize>(count * sizeof(Type)));
-    return vector;
-}
-
-std::optional<ContiguousTree64> Application::import_t64(std::filesystem::path const& path) {
-    auto ifstream = std::ifstream(path, std::ios::ate | std::ios::binary);
-    if (!ifstream) {
-        std::cerr << "Cannot open " << string_from(path) << std::endl;
-        return std::nullopt;
-    }
-    auto const file_size = static_cast<uint64_t>(ifstream.tellg());
-    ifstream.seekg(0);
-    auto const signature = read<char, FILE_SIGNATURE_SIZE>(ifstream);
-    if (std::string_view(std::begin(signature), std::end(signature)) != FILE_SIGNATURE) {
-        std::cerr << "Cannot import " << string_from(path) << std::endl;
-        return std::nullopt;
-    }
-    [[maybe_unused]] auto const major_version = read<uint8_t>(ifstream);
-    [[maybe_unused]] auto const minor_version = read<uint8_t>(ifstream);
-    [[maybe_unused]] auto const patch_version = read<uint16_t>(ifstream);
-    auto const depth = read<uint8_t>(ifstream);
-    auto const node_count = (file_size - HEADER_SIZE) / sizeof(Tree64Node);
-    auto nodes = read<Tree64Node>(ifstream, node_count);
-    return ContiguousTree64{ .depth = depth, .nodes = std::move(nodes) };
 }
 
 }

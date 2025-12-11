@@ -37,7 +37,7 @@
 
 [[nodiscard]] inline std::optional<std::vector<uint8_t>> read_binary_file(std::filesystem::path const& path) {
     auto ifstream = std::ifstream(path, std::ios::ate | std::ios::binary);
-    if (!ifstream) {
+    if (ifstream.fail()) {
         return std::nullopt;
     }
     auto bytes = std::vector<uint8_t>(static_cast<size_t>(ifstream.tellg()));
@@ -48,9 +48,9 @@
 
 [[nodiscard]] inline bool write_binary_file(std::filesystem::path const& path, std::span<uint8_t const> const bytes) {
     auto ofstream = std::ofstream(path, std::ios::trunc | std::ios::binary);
-    if (!ofstream) {
+    if (ofstream.fail()) {
         return false;
     }
     ofstream.write(reinterpret_cast<char const*>(std::data(bytes)), static_cast<std::streamsize>(std::size(bytes)));
-    return ofstream.good();
+    return static_cast<bool>(ofstream);
 }

@@ -1,4 +1,5 @@
 #include "vox.hpp"
+#include "BinaryFstream.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_integer.hpp>
@@ -6,51 +7,40 @@
 #include <glm/gtx/io.hpp>
 
 #include <iostream>
-#include <fstream>
 #include <string>
 #include <array>
 #include <map>
 #include <vector>
 #include <charconv>
 #include <unordered_map>
-#include <ranges>
 #include <concepts>
+
+template<>
+struct BinaryFstreamIO<std::string> {
+    static std::string read(BinaryFstream& bf) {
+        std::string value;
+        auto const length = bf.read<int32_t>();
+        auto string = std::string(static_cast<std::string::size_type>(length), '\0');
+        bf.read(std::data(string), length);
+        return string;
+    }
+};
 
 using Dict = std::map<std::string, std::string>;
 
-template<typename Type>
-static Type read(std::istream& istream) {
-    Type value;
-    istream.read(reinterpret_cast<char*>(&value), sizeof(value));
-    return value;
-}
-
-template<typename Type, std::size_t Length>
-std::array<Type, Length> read(std::istream& istream) {
-    std::array<Type, Length> array;
-    istream.read(reinterpret_cast<char*>(std::data(array)), Length * sizeof(Type));
-    return array;
-}
-
 template<>
-std::string read(std::istream& istream) {
-    auto const length = read<int32_t>(istream);
-    auto string = std::string(static_cast<std::string::size_type>(length), '\0');
-    istream.read(std::data(string), length);
-    return string;
-}
-
-template<>
-Dict read(std::istream& istream) {
-    auto const length = read<int32_t>(istream);
-    auto dict = Dict{};
-    for (auto i = 0; i < length; ++i) {
-        auto key = read<std::string>(istream);
-        auto value = read<std::string>(istream);
-        dict.emplace(std::move(key), std::move(value));
+struct BinaryFstreamIO<Dict> {
+    static Dict read(BinaryFstream& bf) {
+        auto const length = bf.read<int32_t>();
+        auto dict = Dict{};
+        for (auto i = 0; i < length; ++i) {
+            auto key = bf.read<std::string>();
+            auto value = bf.read<std::string>();
+            dict.emplace(std::move(key), std::move(value));
+        }
+        return dict;
     }
-    return dict;
-}
+};
 
 static glm::imat3 read_rotation(std::string_view const vox_rotation_str) {
     auto bits = int8_t{};
@@ -98,8 +88,8 @@ struct Node {
 bool import_vox(std::filesystem::path const& path,
     std::function<bool(glm::uvec3 const&)> const& vox_full_size_importer,
     std::function<void(glm::uvec3 const&)> const& voxel_importer) {
-    auto ifstream = std::ifstream(path, std::ios::binary);
-    if (!ifstream) {
+    auto bf = BinaryFstream(path);
+    if (bf.fail()) {
         return false;
     }
     // format : https://github.com/ephtracy/voxel-model/tree/master
@@ -108,15 +98,15 @@ bool import_vox(std::filesystem::path const& path,
         + sizeof(std::array<char, 4u>) // MAIN chunk id
         + sizeof(int32_t) // chunk content size (0 for MAIN)
         + sizeof(int32_t); // children chunks size
-    auto const for_each_chunks = [&ifstream](std::predicate<std::string_view> auto const chunk_consumer) {
-        ifstream.seekg(START_IGNORED_BYTE_COUNT);
-        while (ifstream.good() && ifstream.peek() != decltype(ifstream)::traits_type::eof()) {
-            auto const chunk_id_letters = read<char, 4u>(ifstream);
+    auto const for_each_chunks = [&bf](std::predicate<std::string_view> auto const chunk_consumer) {
+        bf.seekg(START_IGNORED_BYTE_COUNT);
+        while (bf.good() && bf.peek() != decltype(bf)::traits_type::eof()) {
+            auto const chunk_id_letters = bf.read_array<char, 4u>();
             auto const chunk_id = std::string_view(std::data(chunk_id_letters), std::size(chunk_id_letters));
-            auto const chunk_content_size = read<int32_t>(ifstream);
-            auto const children_chunks_size = read<int32_t>(ifstream);
+            auto const chunk_content_size = bf.read<int32_t>();
+            auto const children_chunks_size = bf.read<int32_t>();
             if (!chunk_consumer(chunk_id)) {
-                ifstream.ignore(chunk_content_size + children_chunks_size);
+                bf.ignore(chunk_content_size + children_chunks_size);
             }
         }
     };
@@ -125,23 +115,23 @@ bool import_vox(std::filesystem::path const& path,
     auto root_node = Node(0);
     for_each_chunks([&](std::string_view const chunk_id) {
         if (chunk_id == "SIZE") {
-            auto const size_x = read<int32_t>(ifstream);
-            auto const size_y = read<int32_t>(ifstream);
-            auto const size_z = read<int32_t>(ifstream);
+            auto const size_x = bf.read<int32_t>();
+            auto const size_y = bf.read<int32_t>();
+            auto const size_z = bf.read<int32_t>();
             model_sizes.emplace_back(glm::ivec3(size_x, size_z, size_y));
         } else if (chunk_id == "nTRN") {
-            auto const node_id = read<int32_t>(ifstream);
+            auto const node_id = bf.read<int32_t>();
             auto const node = Node::search(node_id, root_node);
             assert(node != nullptr);
-            auto const node_attributes = read<Dict>(ifstream);
-            auto const child_node_id = read<int32_t>(ifstream);
+            auto const node_attributes = bf.read<Dict>();
+            auto const child_node_id = bf.read<int32_t>();
             node->m_children.emplace_back(child_node_id);
 
-            ifstream.ignore(sizeof(int32_t)); // reserved id (must be -1)
-            ifstream.ignore(sizeof(int32_t)); // layer id
-            auto const frame_count = read<int32_t>(ifstream);
+            bf.ignore(sizeof(int32_t)); // reserved id (must be -1)
+            bf.ignore(sizeof(int32_t)); // layer id
+            auto const frame_count = bf.read<int32_t>();
             for (auto i = 0; i < frame_count; ++i) {
-                auto const frame_attributes = read<Dict>(ifstream);
+                auto const frame_attributes = bf.read<Dict>();
                 auto const translation_it = frame_attributes.find("_t");
                 if (translation_it != std::end(frame_attributes)) {
                     // vox uses a x right, z up and y forward coordinates system
@@ -165,27 +155,27 @@ bool import_vox(std::filesystem::path const& path,
                 }
             }
         } else if (chunk_id == "nGRP") {
-            auto const node_id = read<int32_t>(ifstream);
+            auto const node_id = bf.read<int32_t>();
             auto const node = Node::search(node_id, root_node);
             assert(node != nullptr);
-            auto const node_attributes = read<Dict>(ifstream);
-            auto const child_node_count = read<int32_t>(ifstream);
+            auto const node_attributes = bf.read<Dict>();
+            auto const child_node_count = bf.read<int32_t>();
             node->m_children.reserve(static_cast<size_t>(child_node_count));
             for (auto i = 0; i < child_node_count; ++i) {
-                auto const child_node_id = read<int32_t>(ifstream);
+                auto const child_node_id = bf.read<int32_t>();
                 node->m_children.emplace_back(child_node_id);
             }
         } else if (chunk_id == "nSHP") {
-            auto const node_id = read<int32_t>(ifstream);
+            auto const node_id = bf.read<int32_t>();
             auto const node = Node::search(node_id, root_node);
             assert(node != nullptr);
-            auto const node_attributes = read<Dict>(ifstream);
-            auto const model_count = read<int32_t>(ifstream);
+            auto const node_attributes = bf.read<Dict>();
+            auto const model_count = bf.read<int32_t>();
             node->m_model_ids.reserve(static_cast<size_t>(model_count));
             for (auto i = 0; i < model_count; ++i) {
-                auto const model_id = read<int32_t>(ifstream);
+                auto const model_id = bf.read<int32_t>();
                 node->m_model_ids.emplace_back(model_id);
-                auto const model_attributes = read<Dict>(ifstream);
+                auto const model_attributes = bf.read<Dict>();
             }
         } else {
             return false;
@@ -237,12 +227,12 @@ bool import_vox(std::filesystem::path const& path,
             auto const [begin, end] = model_transforms.equal_range(model_id);
             return std::ranges::subrange(begin, end);
         }();
-        auto const voxel_count = read<int32_t>(ifstream);
+        auto const voxel_count = bf.read<int32_t>();
         for (auto i = 0; i < voxel_count; ++i) {
-            auto const x = read<uint8_t>(ifstream);
-            auto const y = read<uint8_t>(ifstream);
-            auto const z = read<uint8_t>(ifstream);
-            ifstream.ignore(sizeof(uint8_t)); // palette index
+            auto const x = bf.read<uint8_t>();
+            auto const y = bf.read<uint8_t>();
+            auto const z = bf.read<uint8_t>();
+            bf.ignore(sizeof(uint8_t)); // palette index
 
             for (auto const& [_, model_transform] : model_transforms_range) {
                 auto const voxel = glm::ivec3(model_transform[3]) + glm::ivec3(

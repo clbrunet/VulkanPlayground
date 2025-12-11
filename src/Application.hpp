@@ -89,7 +89,6 @@ private:
 
     void create_tree64_buffer(std::span<Tree64Node const> nodes);
     void save_acceleration_structure(std::filesystem::path const& path);
-    static std::optional<ContiguousTree64> import_t64(std::filesystem::path const& path);
 
 private:
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;

@@ -16,7 +16,6 @@
 #include <optional>
 #include <span>
 #include <filesystem>
-#include <concepts>
 #include <chrono>
 
 namespace vp {
@@ -820,47 +819,18 @@ vk::raii::ImageView Application::create_image_view(vk::Image const image, vk::Fo
             .layerCount = 1u,
         },
     };
-
     return vk::raii::ImageView(m_device, create_info);
 }
 
-void Application::one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const {
-    auto const command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
-        .commandPool = m_command_pool,
-        .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1u,
-    };
-
-    auto const command_buffer = std::move(vk::raii::CommandBuffers(m_device, command_buffer_allocate_info).front());
-
-    auto const command_buffer_begin_info = vk::CommandBufferBeginInfo{
-        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-    };
-    command_buffer.begin(command_buffer_begin_info);
-
-    commands_recorder(*command_buffer);
-
-    command_buffer.end();
-
-    auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
-        .commandBuffer = command_buffer,
-    };
-    m_graphics_queue.submit2(vk::SubmitInfo2{
-        .commandBufferInfoCount = 1u,
-        .pCommandBufferInfos = &command_buffer_submit_info,
-    });
-    m_graphics_queue.waitIdle();
-}
-
 void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
-    one_time_commands([=](vk::CommandBuffer const command_buffer) {
+    one_time_commands(m_device, m_command_pool, m_graphics_queue, [=](vk::CommandBuffer const command_buffer) {
         auto const copy_region = vk::BufferCopy{ .size = size };
         command_buffer.copyBuffer(src, dst, copy_region);
     });
 }
 
 void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
-    one_time_commands([=](vk::CommandBuffer const command_buffer) {
+    one_time_commands(m_device, m_command_pool, m_graphics_queue, [=](vk::CommandBuffer const command_buffer) {
         auto const copy_region = vk::BufferImageCopy{
             .bufferOffset = 0u,
             .bufferRowLength = 0u,

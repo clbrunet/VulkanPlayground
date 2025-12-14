@@ -82,8 +82,6 @@ private:
 
     vk::raii::ImageView create_image_view(vk::Image image, vk::Format format) const;
 
-    void one_time_commands(std::invocable<vk::CommandBuffer> auto const& commands_recorder) const;
-
     void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
     void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
 

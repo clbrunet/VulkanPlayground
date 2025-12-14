@@ -96,6 +96,36 @@ void VmaRaiiBuffer::destroy() {
     *this = VmaRaiiBuffer(nullptr);
 }
 
+void one_time_commands(vk::raii::Device const& device, vk::CommandPool const command_pool, vk::Queue const queue,
+    std::function<void(vk::CommandBuffer)> const& commands_recorder) {
+    auto const command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
+        .commandPool = command_pool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1u,
+    };
+
+    auto const command_buffer = std::move(vk::raii::CommandBuffers(device, command_buffer_allocate_info).front());
+
+    auto const command_buffer_begin_info = vk::CommandBufferBeginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+    };
+    command_buffer.begin(command_buffer_begin_info);
+
+    commands_recorder(*command_buffer);
+
+    command_buffer.end();
+
+    auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
+        .commandBuffer = command_buffer,
+    };
+    queue.submit2(vk::SubmitInfo2{
+        .commandBufferInfoCount = 1u,
+        .pCommandBufferInfos = &command_buffer_submit_info,
+    });
+    // TODO: a fence should be used
+    queue.waitIdle();
+}
+
 void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image,
     vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) {
     auto memory_barrier = vk::ImageMemoryBarrier2{

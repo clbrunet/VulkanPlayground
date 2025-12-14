@@ -1,7 +1,10 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
+
+#include <functional>
 
 class VmaRaiiAllocator {
 public:
@@ -52,6 +55,9 @@ private:
     vk::Buffer m_buffer = nullptr;
     VmaAllocation m_allocation = nullptr;
 };
+
+void one_time_commands(vk::raii::Device const& device, vk::CommandPool const command_pool, vk::Queue const queue,
+    std::function<void(vk::CommandBuffer)> const& commands_recorder);
 
 void transition_image_layout(vk::CommandBuffer command_buffer, vk::Image image,
     vk::ImageLayout old_layout, vk::ImageLayout new_layout);

@@ -39,4 +39,7 @@ layout(scalar, push_constant) uniform PushConstants {
     mat3 u_camera_rotation;
     uint u_tree64_depth;
     Tree64NodesBuffer u_tree64_nodes_device_address;
+    vec3 u_to_sun_direction;
+    vec3 u_sky_config[9];
+    vec3 u_sky_luminance;
 };

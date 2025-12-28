@@ -7,6 +7,7 @@
 #include <glm/ext/scalar_common.hpp>
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
+#include <ArHosekSkyModel.h>
 
 #include <iostream>
 #include <set>
@@ -31,6 +32,8 @@ struct PushConstants {
     glm::mat3 camera_rotation;
     uint32_t tree64_depth;
     vk::DeviceAddress tree64_device_address;
+    glm::vec3 to_sun_direction;
+    HosekWilkieSkyRenderingParameters hosek_wilkie_sky_rendering_parameters;
 };
 #pragma pack(pop)
 
@@ -44,6 +47,7 @@ Application::Application() {
     init_window();
     init_vulkan();
     init_imgui();
+    m_hosek_wilkie_sky_rendering_parameters = compute_hosek_wilkie_sky_parameters();
 }
 
 Application::~Application() {
@@ -608,6 +612,7 @@ void Application::update_gui() {
     ImGui::DragFloat2("Camera rotation", glm::value_ptr(degrees_euler_angles));
     m_camera.set_euler_angles(glm::radians(degrees_euler_angles));
 
+    ImGui::SeparatorText("Importing");
     auto model_path_to_import = string_from(m_model_path_to_import);
     ImGui::SetNextItemWidth(-45.f);
     if (ImGui::InputText("##model_path_to_import", &model_path_to_import, ImGuiInputTextFlags_ElideLeft)) {
@@ -643,6 +648,14 @@ void Application::update_gui() {
         if (path.has_value()) {
             save_acceleration_structure(path.value());
         }
+    }
+    ImGui::SeparatorText("Sky");
+    auto sky_changed = false;
+    sky_changed |= ImGui::SliderAngle("Sun elevation", &m_sun_elevation, 0.f, 90.f);
+    sky_changed |= ImGui::DragFloat("Turbidity", &m_hosek_wilkie_sky_turbidity, 0.1f, 1.f, 10.f);
+    sky_changed |= ImGui::DragFloat("Albedo", &m_hosek_wilkie_sky_albedo, 0.1f, 0.f, 1.f);
+    if (sky_changed) {
+        m_hosek_wilkie_sky_rendering_parameters = compute_hosek_wilkie_sky_parameters();
     }
     ImGui::End();
 }
@@ -769,6 +782,8 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
             .camera_rotation = m_camera.rotation(),
             .tree64_depth = m_tree64_depth,
             .tree64_device_address = m_tree64_device_address,
+            .to_sun_direction = glm::vec3(0.f, glm::sin(m_sun_elevation), glm::cos(m_sun_elevation)),
+            .hosek_wilkie_sky_rendering_parameters = m_hosek_wilkie_sky_rendering_parameters,
         };
         command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
@@ -877,6 +892,18 @@ void Application::save_acceleration_structure(std::filesystem::path const& path)
     if (!save_t64(path, ContiguousTree64{ .depth = m_tree64_depth, .nodes = std::move(nodes) })) {
         std::cerr << "Cannot save acceleration structure to " << string_from(path) << std::endl;
     }
+}
+
+HosekWilkieSkyRenderingParameters Application::compute_hosek_wilkie_sky_parameters() {
+    auto* const sky_model = arhosek_rgb_skymodelstate_alloc_init(m_hosek_wilkie_sky_turbidity, m_hosek_wilkie_sky_albedo, m_sun_elevation);
+    auto rendering_params = HosekWilkieSkyRenderingParameters{};
+    for (auto i = 0u; i < std::size(rendering_params.config); ++i) {
+        rendering_params.config[i] = glm::vec3(sky_model->configs[0][i], sky_model->configs[1][i], sky_model->configs[2][i]);
+    }
+    rendering_params.luminance = glm::vec3(sky_model->radiances[0], sky_model->radiances[1], sky_model->radiances[2])
+            * (2.f * glm::pi<float>() / 683.f), // convert from radiance to luminance
+    arhosekskymodelstate_free(sky_model);
+    return rendering_params;
 }
 
 }

@@ -56,6 +56,8 @@ set(ASSIMP_WARNINGS_AS_ERRORS OFF)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON)
 add_subdirectory(ext/assimp SYSTEM)
 
+add_subdirectory(ext/HosekWilkie_SkylightModel_C_Source SYSTEM)
+
 file(GLOB_RECURSE SRCS src/*.cpp)
 file(GLOB_RECURSE HEADERS src/*.hpp)
 file(GLOB_RECURSE SHADERS shaders/*.vert shaders/*.frag)
@@ -112,6 +114,7 @@ target_link_libraries(VulkanPlayground PRIVATE
     glm
     stb
     assimp
+    HosekWilkieSkyLightModel
 )
 
 foreach(SHADER ${SHADERS})

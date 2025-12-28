@@ -1,0 +1,3 @@
+add_library(HosekWilkieSkyLightModel STATIC ArHosekSkyModel.c)
+
+target_include_directories(HosekWilkieSkyLightModel PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

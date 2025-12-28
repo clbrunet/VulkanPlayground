@@ -57,6 +57,25 @@ uint64_t get_child_bit(const vec3 position, const uint child_scale_bit_offset, c
     return 1ul << ((child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask);
 }
 
+vec3 get_hosek_wilkie_sky_radiance(const float cos_theta, const float gamma, const float cos_gamma)
+{
+    const vec3 expM = exp(u_sky_config[4] * gamma);
+    const float rayM = cos_gamma * cos_gamma;
+    const vec3 mieM = (1.f + rayM) / pow(1.f + u_sky_config[8] * u_sky_config[8]
+        - 2.f * u_sky_config[8] * cos_gamma, vec3(1.5f));
+    const float zenith = sqrt(cos_theta);
+    return (1.f + u_sky_config[0] * exp(u_sky_config[1] / (cos_theta + 0.01f)))
+        * (u_sky_config[2] + u_sky_config[3] * expM + u_sky_config[5] * rayM
+            + u_sky_config[6] * mieM + u_sky_config[7] * zenith);
+}
+
+vec3 get_hosek_wilkie_sky_color(const vec3 ray_direction)
+{
+    const float cos_theta = clamp(ray_direction.y, 0.f, 1.f);
+    const float cos_gamma = clamp(dot(ray_direction, u_to_sun_direction), 0.f, 1.f);
+    return get_hosek_wilkie_sky_radiance(cos_theta, acos(cos_gamma), cos_gamma) * u_sky_luminance;
+}
+
 void main() {
     Ray ray = compute_ray();
     const float t = ray_aabb_intersection(ray, vec3(1.f), vec3(2.f));
@@ -64,10 +83,11 @@ void main() {
         out_color = vec4(0.01f, 0.01f, 0.01f, 1.f);
         return;
     }
+    const vec3 ray_origin = mix(ray.position, 3.f - ray.position, greaterThan(ray.direction, vec3(0.f)));
+    const vec3 real_ray_direction = ray.direction;
     // Mirror the ray and coordinates to optimize the traversal, knowing that the ray moves in the negative direction
     const uint mirror_mask = uint(ray.direction.x > 0.f) * 0x03u
         | uint(ray.direction.z > 0.f) * 0x0Cu | uint(ray.direction.y > 0.f) * 0x30u;
-    const vec3 ray_origin = mix(ray.position, 3.f - ray.position, greaterThan(ray.direction, vec3(0.f)));
     ray.direction = -abs(ray.direction);
     ray.direction_inverse = 1.f / ray.direction;
     ray.position = clamp(ray_origin + t * ray.direction, vec3(1.f), vec3(1.99999988079071044921875f));
@@ -126,5 +146,5 @@ void main() {
             node_index = node_index_stack[child_scale_bit_offset >> 1u];
         }
     }
-    out_color = vec4(0.f, 0.f, 0.f, 1.f);
+    out_color = vec4(get_hosek_wilkie_sky_color(real_ray_direction), 1.f);
 }

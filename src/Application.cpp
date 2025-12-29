@@ -27,13 +27,18 @@ constexpr auto VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 
 #pragma pack(push, 1)
 struct PushConstants {
-    glm::vec3 camera_position;
     float aspect_ratio;
+    glm::vec3 camera_position;
     glm::mat3 camera_rotation;
-    uint32_t tree64_depth;
-    vk::DeviceAddress tree64_device_address;
     glm::vec3 to_sun_direction;
-    HosekWilkieSkyRenderingParameters hosek_wilkie_sky_rendering_parameters;
+    vk::DeviceAddress hosek_wilkie_sky_rendering_parameters_device_address;
+    vk::DeviceAddress tree64_device_address;
+    uint32_t tree64_depth;
+};
+
+struct HosekWilkieSkyRenderingParameters {
+    std::array<glm::vec3, 9u> config;
+    glm::vec3 luminance;
 };
 #pragma pack(pop)
 
@@ -47,7 +52,6 @@ Application::Application() {
     init_window();
     init_vulkan();
     init_imgui();
-    m_hosek_wilkie_sky_rendering_parameters = compute_hosek_wilkie_sky_parameters();
 }
 
 Application::~Application() {
@@ -146,6 +150,8 @@ void Application::init_vulkan() {
     create_command_buffers();
 
     create_sync_objects();
+
+    create_hosek_wilkie_sky_rendering_parameters_buffer();
 }
 
 void Application::create_instance() {
@@ -500,15 +506,15 @@ void Application::create_graphics_pipeline() {
         .pDynamicStates = std::data(dynamic_states),
     };
 
-    auto const push_contant_ranges = std::array{
+    auto const push_constants_ranges = std::array{
         vk::PushConstantRange{
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             .size = sizeof(PushConstants)
         },
     };
     auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
-        .pushConstantRangeCount = static_cast<uint32_t>(std::size(push_contant_ranges)),
-        .pPushConstantRanges = std::data(push_contant_ranges),
+        .pushConstantRangeCount = static_cast<uint32_t>(std::size(push_constants_ranges)),
+        .pPushConstantRanges = std::data(push_constants_ranges),
     };
     m_pipeline_layout = vk::raii::PipelineLayout(m_device, pipeline_layout_create_info);
 
@@ -579,6 +585,15 @@ void Application::create_sync_objects() {
         m_image_available_semaphores.emplace_back(m_device, vk::SemaphoreCreateInfo{});
         m_in_flight_fences.emplace_back(m_device, in_flight_fence_create_info);
     }
+}
+
+void Application::create_hosek_wilkie_sky_rendering_parameters_buffer() {
+    m_hosek_wilkie_sky_rendering_parameters_buffer = VmaRaiiBuffer(m_allocator, sizeof(HosekWilkieSkyRenderingParameters),
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    m_hosek_wilkie_sky_rendering_parameters_device_address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{
+        .buffer = m_hosek_wilkie_sky_rendering_parameters_buffer,
+    });
+    update_hosek_wilkie_sky_rendering_parameters();
 }
 
 void Application::init_imgui() {
@@ -655,7 +670,7 @@ void Application::update_gui() {
     sky_changed |= ImGui::DragFloat("Turbidity", &m_hosek_wilkie_sky_turbidity, 0.1f, 1.f, 10.f);
     sky_changed |= ImGui::DragFloat("Albedo", &m_hosek_wilkie_sky_albedo, 0.1f, 0.f, 1.f);
     if (sky_changed) {
-        m_hosek_wilkie_sky_rendering_parameters = compute_hosek_wilkie_sky_parameters();
+        update_hosek_wilkie_sky_rendering_parameters();
     }
     ImGui::End();
 }
@@ -777,13 +792,13 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 
     if (m_tree64_depth > 0u) {
         auto const push_constants = PushConstants{
-            .camera_position = m_camera.position(),
             .aspect_ratio = viewport.width / viewport.height,
+            .camera_position = m_camera.position(),
             .camera_rotation = m_camera.rotation(),
-            .tree64_depth = m_tree64_depth,
-            .tree64_device_address = m_tree64_device_address,
             .to_sun_direction = glm::vec3(0.f, glm::sin(m_sun_elevation), glm::cos(m_sun_elevation)),
-            .hosek_wilkie_sky_rendering_parameters = m_hosek_wilkie_sky_rendering_parameters,
+            .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
+            .tree64_device_address = m_tree64_device_address,
+            .tree64_depth = m_tree64_depth,
         };
         command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
@@ -894,7 +909,7 @@ void Application::save_acceleration_structure(std::filesystem::path const& path)
     }
 }
 
-HosekWilkieSkyRenderingParameters Application::compute_hosek_wilkie_sky_parameters() {
+void Application::update_hosek_wilkie_sky_rendering_parameters() {
     auto* const sky_model = arhosek_rgb_skymodelstate_alloc_init(m_hosek_wilkie_sky_turbidity, m_hosek_wilkie_sky_albedo, m_sun_elevation);
     auto rendering_params = HosekWilkieSkyRenderingParameters{};
     for (auto i = 0u; i < std::size(rendering_params.config); ++i) {
@@ -903,7 +918,13 @@ HosekWilkieSkyRenderingParameters Application::compute_hosek_wilkie_sky_paramete
     rendering_params.luminance = glm::vec3(sky_model->radiances[0], sky_model->radiances[1], sky_model->radiances[2])
             * (2.f * glm::pi<float>() / 683.f), // convert from radiance to luminance
     arhosekskymodelstate_free(sky_model);
-    return rendering_params;
+
+    auto staging_buffer = VmaRaiiBuffer(m_allocator, sizeof(HosekWilkieSkyRenderingParameters), vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
+    staging_buffer.copy_memory_to_allocation(reinterpret_cast<uint8_t const*>(&rendering_params), 0u, sizeof(HosekWilkieSkyRenderingParameters));
+
+    m_device.waitIdle();
+    copy_buffer(staging_buffer, m_hosek_wilkie_sky_rendering_parameters_buffer, sizeof(HosekWilkieSkyRenderingParameters));
 }
 
 }

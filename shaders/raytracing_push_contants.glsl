@@ -29,17 +29,21 @@ uint first_child_node_index(Tree64Node node) {
 
 const uint MAX_TREE64_DEPTH = 11u;
 
-layout(std430, buffer_reference) readonly buffer Tree64NodesBuffer {
-    Tree64Node b_tree64_nodes[];
+layout(scalar, buffer_reference) readonly buffer Tree64NodesBuffer {
+    Tree64Node tree64_nodes[];
+};
+
+layout(scalar, buffer_reference) readonly buffer HosekWilkieSkyRenderingParametersBuffer {
+    vec3 config[9];
+    vec3 luminance;
 };
 
 layout(scalar, push_constant) uniform PushConstants {
-    vec3 u_camera_position;
     float u_aspect_ratio;
+    vec3 u_camera_position;
     mat3 u_camera_rotation;
-    uint u_tree64_depth;
-    Tree64NodesBuffer u_tree64_nodes_device_address;
     vec3 u_to_sun_direction;
-    vec3 u_sky_config[9];
-    vec3 u_sky_luminance;
+    HosekWilkieSkyRenderingParametersBuffer u_hosek_wilkie_sky_rendering_parameters_device_address;
+    Tree64NodesBuffer u_tree64_nodes_device_address;
+    uint u_tree64_depth;
 };

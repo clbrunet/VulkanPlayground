@@ -17,13 +17,6 @@
 
 namespace vp {
 
-#pragma pack(push, 1)
-struct HosekWilkieSkyRenderingParameters {
-    std::array<glm::vec3, 9u> config;
-    glm::vec3 luminance;
-};
-#pragma pack(pop)
-
 class Application {
 public:
     Application();
@@ -76,6 +69,8 @@ private:
 
     void create_sync_objects();
 
+    void create_hosek_wilkie_sky_rendering_parameters_buffer();
+
     void init_imgui();
 
     void update_gui();
@@ -95,7 +90,7 @@ private:
     void create_tree64_buffer(std::span<Tree64Node const> nodes);
     void save_acceleration_structure(std::filesystem::path const& path);
 
-    HosekWilkieSkyRenderingParameters compute_hosek_wilkie_sky_parameters();
+    void update_hosek_wilkie_sky_rendering_parameters();
 
 private:
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
@@ -144,7 +139,8 @@ private:
     float m_sun_elevation = glm::radians(45.f);
     float m_hosek_wilkie_sky_turbidity = 3.f;
     float m_hosek_wilkie_sky_albedo = 0.3f;
-    HosekWilkieSkyRenderingParameters m_hosek_wilkie_sky_rendering_parameters;
+    VmaRaiiBuffer m_hosek_wilkie_sky_rendering_parameters_buffer = nullptr;
+    vk::DeviceAddress m_hosek_wilkie_sky_rendering_parameters_device_address = 0u;
 
     uint8_t m_current_in_flight_frame_index = 0u;
 

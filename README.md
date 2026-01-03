@@ -2,7 +2,7 @@
 
 Voxel traversal and Vulkan Playground
 
-<img width="1920" height="1032" alt="VulkanPlayground screenshot" src="https://github.com/user-attachments/assets/cc2fb67f-6f96-4413-8d0c-0d247bbe100e" />
+<img width="1920" height="1032" alt="Screenshot 2026-01-03 205059" src="https://github.com/user-attachments/assets/2c20b56e-a5b4-41d3-ba9c-9dfa6c969bf5" />
 
 ## Building
 
@@ -41,3 +41,4 @@ cmake -B build -G "MinGW Makefiles" && cmake --build build --parallel 4 && ./bui
 * [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
 * [glm](https://github.com/g-truc/glm)
 * [Dear ImGui](https://github.com/ocornut/imgui)
+* [Hosek-Wilkie Sky Model](https://cgg.mff.cuni.cz/projects/SkylightModelling/)

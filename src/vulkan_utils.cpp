@@ -126,6 +126,28 @@ void one_time_commands(vk::raii::Device const& device, vk::CommandPool const com
     queue.waitIdle();
 }
 
+vk::raii::ImageView create_image_view(vk::raii::Device const& device, vk::Image const image, vk::Format const format) {
+    auto const create_info = vk::ImageViewCreateInfo{
+        .image = image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .components = vk::ComponentMapping{
+            .r = vk::ComponentSwizzle::eIdentity,
+            .g = vk::ComponentSwizzle::eIdentity,
+            .b = vk::ComponentSwizzle::eIdentity,
+            .a = vk::ComponentSwizzle::eIdentity,
+        },
+        .subresourceRange = vk::ImageSubresourceRange{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0u,
+            .levelCount = 1u,
+            .baseArrayLayer = 0u,
+            .layerCount = 1u,
+        },
+    };
+    return vk::raii::ImageView(device, create_info);
+}
+
 void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image const image,
     vk::ImageLayout const old_layout, vk::ImageLayout const new_layout) {
     auto memory_barrier = vk::ImageMemoryBarrier2{

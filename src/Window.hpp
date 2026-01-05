@@ -23,12 +23,13 @@ public:
 
     void set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> framebuffer_callback);
 
-    VkSurfaceKHR create_surface(VkInstance instance);
+    std::span<char const* const> get_required_instance_extensions() const;
+    VkSurfaceKHR create_surface(VkInstance instance) const;
     void init_imgui_for_vulkan();
 
     void prepare_event_loop();
     void poll_events();
-    void wait_for_valid_framebuffer() const;
+    glm::ivec2 wait_for_valid_framebuffer() const;
 
     [[nodiscard]] bool should_close() const;
     [[nodiscard]] glm::ivec2 framebuffer_dimensions() const;

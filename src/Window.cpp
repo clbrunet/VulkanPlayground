@@ -78,7 +78,13 @@ void Window::set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> fr
     m_framebuffer_size_callback = std::move(framebuffer_callback);
 }
 
-VkSurfaceKHR Window::create_surface(VkInstance const instance) {
+std::span<char const* const> Window::get_required_instance_extensions() const {
+    auto extension_count = uint32_t{};
+    auto const extensions = glfwGetRequiredInstanceExtensions(&extension_count);
+    return std::span<char const* const>(extensions, extension_count);
+}
+
+VkSurfaceKHR Window::create_surface(VkInstance const instance) const {
     auto surface = VkSurfaceKHR{};
     if (glfwCreateWindowSurface(instance, m_window, nullptr, &surface) != VK_SUCCESS) {
         throw std::runtime_error("glfwCreateWindowSurface");
@@ -105,12 +111,13 @@ void Window::poll_events() {
     m_last_cursor_position = cursor_position;
 }
 
-void Window::wait_for_valid_framebuffer() const {
+glm::ivec2 Window::wait_for_valid_framebuffer() const {
     auto framebuffer_dimensions = this->framebuffer_dimensions();
     while (framebuffer_dimensions.x == 0 || framebuffer_dimensions.y == 0) {
         glfwWaitEvents();
         framebuffer_dimensions = this->framebuffer_dimensions();
     }
+    return framebuffer_dimensions;
 }
 
 glm::ivec2 Window::framebuffer_dimensions() const {

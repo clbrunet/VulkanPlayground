@@ -52,12 +52,14 @@ public:
 
 private:
     VmaAllocator m_allocator = nullptr;
-    vk::Buffer m_buffer = nullptr;
+    vk::Buffer m_buffer = vk::Buffer(nullptr);
     VmaAllocation m_allocation = nullptr;
 };
 
 void one_time_commands(vk::raii::Device const& device, vk::CommandPool const command_pool, vk::Queue const queue,
     std::function<void(vk::CommandBuffer)> const& commands_recorder);
+
+vk::raii::ImageView create_image_view(vk::raii::Device const& device, vk::Image image, vk::Format format);
 
 void transition_image_layout(vk::CommandBuffer command_buffer, vk::Image image,
     vk::ImageLayout old_layout, vk::ImageLayout new_layout);

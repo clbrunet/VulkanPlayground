@@ -87,6 +87,7 @@ else()
         -Wshadow
         -Wconversion
         -Wno-missing-field-initializers
+        -Wno-unused-function
         $<$<CONFIG:Debug>:-g3>
     )
 endif()

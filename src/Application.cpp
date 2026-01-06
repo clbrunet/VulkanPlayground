@@ -134,6 +134,8 @@ void Application::init_window() {
 void Application::init_vulkan() {
     m_vk_ctx = VulkanContext(m_window, DEVICE_REQUIRED_EXTENSIONS);
     std::cout << "Selected GPU : " << m_vk_ctx.physical_device.getProperties().deviceName << std::endl;
+    auto const present_modes = m_vk_ctx.physical_device.getSurfacePresentModesKHR(m_vk_ctx.surface);
+    m_has_immediate_present_mode = std::ranges::find(present_modes, vk::PresentModeKHR::eImmediate) != std::end(present_modes);
 
     recreate_swapchain();
 
@@ -152,7 +154,7 @@ void Application::recreate_swapchain() {
     m_swapchain.recreate(vk::Extent2D{
         .width = static_cast<uint32_t>(framebuffer_dimensions.x),
         .height = static_cast<uint32_t>(framebuffer_dimensions.y),
-    });
+    }, m_use_v_sync ? vk::PresentModeKHR::eFifo : vk::PresentModeKHR::eImmediate);
     m_should_recreate_swapchain = false;
 }
 
@@ -334,6 +336,11 @@ void Application::update_gui() {
     ImGui::Begin("GUI");
     ImGui::Text("Average frame time : %f ms (%u FPS)", 1000.f / ImGui::GetIO().Framerate,
         static_cast<uint32_t>(ImGui::GetIO().Framerate));
+    if (m_has_immediate_present_mode) {
+        if (ImGui::Checkbox("V-Sync", &m_use_v_sync)) {
+            m_should_recreate_swapchain = true;
+        }
+    }
 
     ImGui::Text("Hold right click to move/rotate the camera");
     ImGui::Text("Speed is adjustable using mouse wheel and Shift/Alt");

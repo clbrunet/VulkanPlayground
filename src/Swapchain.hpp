@@ -17,7 +17,7 @@ public:
     Swapchain& operator=(Swapchain const& other) = delete;
     Swapchain& operator=(Swapchain&& other) = delete;
 
-    void recreate(vk::Extent2D extent);
+    void recreate(vk::Extent2D extent, vk::PresentModeKHR present_mode);
 
     [[nodiscard]] vk::Format const& format() const;
     [[nodiscard]] vk::Extent2D const& extent() const;
@@ -35,7 +35,6 @@ public:
 
 private:
     VulkanContext const& m_vk_ctx;
-    vk::Queue m_present_queue = vk::Queue(nullptr);
     vk::raii::SwapchainKHR m_swapchain = vk::raii::SwapchainKHR(nullptr);
     vk::Format m_format;
     vk::Extent2D m_extent;

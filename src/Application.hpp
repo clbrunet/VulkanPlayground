@@ -77,6 +77,8 @@ private:
     bool m_should_recreate_swapchain = false;
 
     VulkanContext m_vk_ctx = VulkanContext(nullptr);
+    bool m_has_immediate_present_mode = false;
+    bool m_use_v_sync = true;
     Swapchain m_swapchain = Swapchain(m_vk_ctx);
 
     vk::raii::PipelineLayout m_pipeline_layout = vk::raii::PipelineLayout(nullptr);

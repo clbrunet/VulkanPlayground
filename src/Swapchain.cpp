@@ -16,15 +16,13 @@ Swapchain::~Swapchain() {
     }
 }
 
-void Swapchain::recreate(vk::Extent2D const extent) {
-    assert(*m_vk_ctx.device);
+void Swapchain::recreate(vk::Extent2D const extent, vk::PresentModeKHR const present_mode) {
     m_vk_ctx.device.waitIdle();
     m_render_finished_semaphores.clear();
     m_image_views.clear();
     m_images.clear();
     m_swapchain.clear();
 
-    m_present_queue = m_vk_ctx.present_queue;
     auto const surface_capabilities = m_vk_ctx.physical_device.getSurfaceCapabilitiesKHR(m_vk_ctx.surface);
 
     auto const min_image_count = std::invoke([&] {
@@ -79,8 +77,7 @@ void Swapchain::recreate(vk::Extent2D const extent) {
         .pQueueFamilyIndices = std::data(queue_family_indices),
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        .presentMode = vk::PresentModeKHR::eFifo,
-        // .presentMode = vk::PresentModeKHR::eImmediate,
+        .presentMode = present_mode,
         .clipped = vk::True,
         .oldSwapchain = vk::SwapchainKHR{},
     };
@@ -135,7 +132,7 @@ bool Swapchain::queue_present(AcquiredImage const& acquired_image) {
             .pSwapchains = &*m_swapchain,
             .pImageIndices = &acquired_image.index,
         };
-        auto const result = m_present_queue.presentKHR(present_info);
+        auto const result = m_vk_ctx.present_queue.presentKHR(present_info);
         if (result == vk::Result::eSuboptimalKHR) {
             return false;
         }

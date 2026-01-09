@@ -96,8 +96,11 @@ void Window::init_imgui_for_vulkan() {
     ImGui_ImplGlfw_InitForVulkan(m_window, true);
 }
 
-bool Window::should_close() const {
-    return static_cast<bool>(glfwWindowShouldClose(m_window));
+void Window::prepare_event_loop() {
+    poll_events();
+    m_delta_time = 0.f;
+    m_scroll_delta = 0.f;
+    m_cursor_delta = glm::vec2(0.f);
 }
 
 void Window::poll_events() {
@@ -111,13 +114,8 @@ void Window::poll_events() {
     m_last_cursor_position = cursor_position;
 }
 
-glm::ivec2 Window::wait_for_valid_framebuffer() const {
-    auto framebuffer_dimensions = this->framebuffer_dimensions();
-    while (framebuffer_dimensions.x == 0 || framebuffer_dimensions.y == 0) {
-        glfwWaitEvents();
-        framebuffer_dimensions = this->framebuffer_dimensions();
-    }
-    return framebuffer_dimensions;
+bool Window::should_close() const {
+    return static_cast<bool>(glfwWindowShouldClose(m_window));
 }
 
 glm::ivec2 Window::framebuffer_dimensions() const {
@@ -127,11 +125,33 @@ glm::ivec2 Window::framebuffer_dimensions() const {
     return glm::ivec2(width, height);
 }
 
-void Window::prepare_event_loop() {
-    poll_events();
-    m_delta_time = 0.f;
-    m_scroll_delta = 0.f;
-    m_cursor_delta = glm::vec2(0.f);
+glm::ivec2 Window::wait_for_valid_framebuffer() const {
+    auto framebuffer_dimensions = this->framebuffer_dimensions();
+    while (framebuffer_dimensions.x == 0 || framebuffer_dimensions.y == 0) {
+        glfwWaitEvents();
+        framebuffer_dimensions = this->framebuffer_dimensions();
+    }
+    return framebuffer_dimensions;
+}
+
+bool Window::fullscreen_status() {
+    return glfwGetWindowMonitor(m_window) != nullptr;
+}
+
+void Window::set_fullscreen_status(bool const fullscreen_status) {
+    if (fullscreen_status == this->fullscreen_status()) {
+        return;
+    }
+    if (fullscreen_status) {
+        glfwGetWindowPos(m_window, &m_postion_before_fullscreen.x, &m_postion_before_fullscreen.y);
+        glfwGetWindowSize(m_window, &m_size_before_fullscreen.x, &m_size_before_fullscreen.y);
+        auto* const monitor = glfwGetPrimaryMonitor();
+        auto const& video_mode = *glfwGetVideoMode(monitor);
+        glfwSetWindowMonitor(m_window, monitor, 0, 0, video_mode.width, video_mode.height, GLFW_DONT_CARE);
+    } else {
+        glfwSetWindowMonitor(m_window, nullptr, m_postion_before_fullscreen.x, m_postion_before_fullscreen.y,
+            m_size_before_fullscreen.x, m_size_before_fullscreen.y, GLFW_DONT_CARE);
+    }
 }
 
 float Window::time() const {

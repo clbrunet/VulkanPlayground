@@ -29,10 +29,13 @@ public:
 
     void prepare_event_loop();
     void poll_events();
-    glm::ivec2 wait_for_valid_framebuffer() const;
 
     [[nodiscard]] bool should_close() const;
     [[nodiscard]] glm::ivec2 framebuffer_dimensions() const;
+    glm::ivec2 wait_for_valid_framebuffer() const;
+
+    [[nodiscard]] bool fullscreen_status();
+    void set_fullscreen_status(bool fullscreen_status);
 
     [[nodiscard]] float time() const;
     [[nodiscard]] float delta_time() const;
@@ -61,6 +64,8 @@ private:
     glm::vec2 m_last_cursor_position = glm::vec2(0.f);
     glm::vec2 m_cursor_delta = glm::vec2(0.f);
     float m_scroll_delta = 0.f;
+    glm::ivec2 m_postion_before_fullscreen;
+    glm::ivec2 m_size_before_fullscreen;
 };
 
 }

@@ -336,7 +336,12 @@ void Application::update_gui() {
     ImGui::Begin("GUI");
     ImGui::Text("Average frame time : %f ms (%u FPS)", 1000.f / ImGui::GetIO().Framerate,
         static_cast<uint32_t>(ImGui::GetIO().Framerate));
+    auto fullscreen_status = m_window.fullscreen_status();
+    if (ImGui::Checkbox("Fullscreen", &fullscreen_status)) {
+        m_window.set_fullscreen_status(fullscreen_status);
+    }
     if (m_has_immediate_present_mode) {
+        ImGui::SameLine();
         if (ImGui::Checkbox("V-Sync", &m_use_v_sync)) {
             m_should_recreate_swapchain = true;
         }

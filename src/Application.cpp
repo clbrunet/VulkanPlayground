@@ -161,21 +161,18 @@ void Application::recreate_swapchain() {
 void Application::create_graphics_pipeline() {
     auto const rendering_create_info = pipeline_rendering_create_info();
 
-    auto const vertex_shader_module = create_shader_module("raytracing.vert");
-    auto const vertex_shader_stage_create_info = vk::PipelineShaderStageCreateInfo{
-        .stage = vk::ShaderStageFlagBits::eVertex,
-        .module = vertex_shader_module,
-        .pName = "main",
+    auto const shader_module = create_shader_module("raytracing.spv");
+    auto const shader_stages = std::array{
+        vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = shader_module,
+            .pName = "main",
+        }, vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = shader_module,
+            .pName = "main",
+        },
     };
-
-    auto const fragment_shader_module = create_shader_module("raytracing.frag");
-    auto const fragment_shader_stage_create_info = vk::PipelineShaderStageCreateInfo{
-        .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = fragment_shader_module,
-        .pName = "main",
-    };
-
-    auto const shader_stages = std::array{ vertex_shader_stage_create_info, fragment_shader_stage_create_info };
 
     auto const vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo{};
 

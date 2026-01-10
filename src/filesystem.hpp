@@ -28,7 +28,7 @@
 }
 
 [[nodiscard]] inline std::filesystem::path get_spirv_shader_path(std::string shader) {
-    return path_from(SPIRV_SHADERS_DIRECTORY "/" + std::move(shader) + ".spv");
+    return path_from(SPIRV_SHADERS_DIRECTORY "/" + std::move(shader));
 }
 
 [[nodiscard]] inline std::filesystem::path get_asset_path(std::string asset) {

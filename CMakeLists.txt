@@ -60,7 +60,6 @@ add_subdirectory(ext/HosekWilkie_SkylightModel_C_Source SYSTEM)
 
 file(GLOB_RECURSE SRCS src/*.cpp)
 file(GLOB_RECURSE HEADERS src/*.hpp)
-file(GLOB_RECURSE SHADERS shaders/*.vert shaders/*.frag)
 
 if(MSVC)
     set(VULKAN_PLAYGROUND_FLAGS
@@ -94,6 +93,8 @@ endif()
 
 add_executable(VulkanPlayground ${SRCS} ${HEADERS})
 
+set(SPIRV_SHADERS_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
+
 target_compile_definitions(VulkanPlayground PRIVATE
     NOMINMAX
     GLFW_INCLUDE_NONE
@@ -101,7 +102,7 @@ target_compile_definitions(VulkanPlayground PRIVATE
     VULKAN_HPP_NO_CONSTRUCTORS
     GLM_FORCE_DEPTH_ZERO_TO_ONE
     GLM_ENABLE_EXPERIMENTAL
-    SPIRV_SHADERS_DIRECTORY=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders\"
+    SPIRV_SHADERS_DIRECTORY=\"${SPIRV_SHADERS_DIRECTORY}\"
     ASSETS_DIRECTORY=\"${CMAKE_SOURCE_DIR}/assets\"
 )
 target_compile_options(VulkanPlayground PRIVATE ${VULKAN_PLAYGROUND_FLAGS})
@@ -118,22 +119,25 @@ target_link_libraries(VulkanPlayground PRIVATE
     HosekWilkieSkyLightModel
 )
 
+find_program(SLANGC slangc REQUIRED HINTS $ENV{VULKAN_SDK}/bin)
+file(GLOB_RECURSE SHADERS shaders/*.slang)
 foreach(SHADER ${SHADERS})
-    file(RELATIVE_PATH RELATIVE_SHADER ${CMAKE_SOURCE_DIR} ${SHADER})
-    set(SPIRV_SHADER ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${RELATIVE_SHADER}.spv)
-    file(RELATIVE_PATH RELATIVE_SPIRV_SHADER ${CMAKE_SOURCE_DIR} ${SPIRV_SHADER})
-    get_filename_component(RELATIVE_SPIRV_SHADER_DIRECTORY ${RELATIVE_SPIRV_SHADER} DIRECTORY)
+    cmake_path(RELATIVE_PATH SHADER BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/shaders OUTPUT_VARIABLE RELATIVE_SHADER)
+    cmake_path(REPLACE_EXTENSION RELATIVE_SHADER LAST_ONLY ".spv" OUTPUT_VARIABLE RELATIVE_SHADER_SPIRV)
+    cmake_path(REPLACE_EXTENSION RELATIVE_SHADER LAST_ONLY ".d" OUTPUT_VARIABLE RELATIVE_SHADER_DEPFILE)
+    set(SHADER_SPIRV ${SPIRV_SHADERS_DIRECTORY}/${RELATIVE_SHADER_SPIRV})
+    set(SHADER_DEPFILE ${SPIRV_SHADERS_DIRECTORY}/${RELATIVE_SHADER_DEPFILE})
 
     add_custom_command(
-        OUTPUT ${SPIRV_SHADER}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${RELATIVE_SPIRV_SHADER_DIRECTORY}
-        COMMAND ${Vulkan_GLSLC_EXECUTABLE}
-            --target-env=vulkan1.3 $<IF:$<CONFIG:Debug>,-O0,-O> $<$<CONFIG:Debug>:-g>
-            ${RELATIVE_SHADER} -o ${RELATIVE_SPIRV_SHADER}
+        OUTPUT ${SHADER_SPIRV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${SPIRV_SHADERS_DIRECTORY}
+        COMMAND ${SLANGC} -profile spirv_1_6 -fvk-use-entrypoint-name -fvk-use-scalar-layout -matrix-layout-column-major
+            $<IF:$<CONFIG:Debug>,-O0,-O3> $<IF:$<CONFIG:Debug>,-g3,-g0>
+            ${SHADER} -o ${SHADER_SPIRV} -depfile ${SHADER_DEPFILE}
         MAIN_DEPENDENCY ${SHADER}
+        DEPFILE ${SHADER_DEPFILE}
     )
-    list(APPEND SPIRV_SHADERS ${SPIRV_SHADER})
+    list(APPEND SPIRV_SHADERS ${SHADER_SPIRV})
 endforeach()
 
 add_custom_target(Shaders DEPENDS ${SPIRV_SHADERS})

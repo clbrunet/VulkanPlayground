@@ -25,26 +25,43 @@ public:
     using std::fstream::read;
 
     template<typename Type>
+    void read(Type& value) {
+        BinaryFstreamIO<Type>::read(*this, value);
+    }
+
+    template<typename Type>
     Type read() {
-        return BinaryFstreamIO<Type>::read(*this);
+        Type value;
+        read(value);
+        return value;
+    }
+
+    template<typename Type, std::size_t Length>
+    void read_array(std::array<Type, Length>& array) {
+        for (auto& elem : array) {
+            read(elem);
+        }
     }
 
     template<typename Type, std::size_t Length>
     std::array<Type, Length> read_array() {
         std::array<Type, Length> array;
-        for (auto& elem : array) {
-            elem = read<Type>();
-        }
+        read_array(array);
         return array;
+    }
+
+    template<typename Type>
+    void read_vector(size_t const count, std::vector<Type>& vector) {
+        vector.reserve(std::size(vector) + count);
+        for (auto i = 0u; i < count; ++i) {
+            vector.emplace_back(read<Type>());
+        }
     }
 
     template<typename Type>
     std::vector<Type> read_vector(size_t const count) {
         auto vector = std::vector<Type>();
-        vector.reserve(count);
-        for (auto i = 0u; i < count; ++i) {
-            vector.emplace_back(read<Type>());
-        }
+        read_vector(count, vector);
         return vector;
     }
 
@@ -77,10 +94,8 @@ template<arithmetic ArithmeticType>
 struct BinaryFstreamIO<ArithmeticType> {
     static_assert(std::endian::native == std::endian::little, "Little endian is assumed");
 
-    static ArithmeticType read(BinaryFstream& fstream) {
-        ArithmeticType value;
+    static void read(BinaryFstream& fstream, ArithmeticType& value) {
         fstream.read(reinterpret_cast<char*>(&value), sizeof(value));
-        return value;
     }
 
     static void write(BinaryFstream& fstream, ArithmeticType const value) {

@@ -17,12 +17,10 @@
 
 template<>
 struct BinaryFstreamIO<std::string> {
-    static std::string read(BinaryFstream& bf) {
-        std::string value;
+    static void read(BinaryFstream& bf, std::string& value) {
         auto const length = bf.read<int32_t>();
-        auto string = std::string(static_cast<std::string::size_type>(length), '\0');
-        bf.read(std::data(string), length);
-        return string;
+        value = std::string(static_cast<std::string::size_type>(length), '\0');
+        bf.read(std::data(value), length);
     }
 };
 
@@ -30,15 +28,13 @@ using Dict = std::map<std::string, std::string>;
 
 template<>
 struct BinaryFstreamIO<Dict> {
-    static Dict read(BinaryFstream& bf) {
+    static void read(BinaryFstream& bf, Dict& dict) {
         auto const length = bf.read<int32_t>();
-        auto dict = Dict{};
         for (auto i = 0; i < length; ++i) {
             auto key = bf.read<std::string>();
             auto value = bf.read<std::string>();
             dict.emplace(std::move(key), std::move(value));
         }
-        return dict;
     }
 };
 

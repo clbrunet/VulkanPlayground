@@ -16,14 +16,8 @@ consteval uint64_t operator""_u64(unsigned long long const value) {
 
 #pragma pack(push, 1)
 struct Tree64Node {
-    uint32_t up_children_mask = 0u; //   (1 2 0) -> 0b1, (0 2 1) -> 0b10000, (0 3 0) -> 0b1'00000000'00000000
-    uint32_t down_children_mask = 0u; // (1 0 0) -> 0b1, (0 0 1) -> 0b10000, (0 1 0) -> 0b1'00000000'00000000
+    uint64_t children_mask = 0u; // (1 0 0) -> 0b1, (0 0 1) -> 0b10000, (0 1 0) -> 0b1'00000000'00000000
     uint32_t is_leaf_and_first_child_node_index = 1u; // least significant bit -> is_leaf, 31 other bits -> first_child_node_index
-
-    void set_children_mask(uint64_t const children_mask) {
-        up_children_mask = static_cast<uint32_t>(children_mask >> 32_u64);
-        down_children_mask = static_cast<uint32_t>(children_mask);
-    }
 
     [[nodiscard]] bool is_leaf() const {
         return (is_leaf_and_first_child_node_index & 1u) == 1u;

@@ -58,8 +58,8 @@ uint8_t Tree64::depth() const {
 std::vector<Tree64Node> Tree64::build_contiguous_nodes() const {
     auto nodes = std::vector<Tree64Node>(1u);
     auto const build = [&](auto const& self, BuildingTree64Node const& building_node, Tree64Node& node) -> void {
+        node.children_mask = building_node.children_mask;
         node.set_is_leaf(building_node.is_leaf());
-        node.set_children_mask(building_node.children_mask);
         auto child_index = std::size(nodes);
         if (!node.is_leaf()) {
             node.set_first_child_node_index(static_cast<uint32_t>(child_index));

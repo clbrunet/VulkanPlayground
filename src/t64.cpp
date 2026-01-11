@@ -22,14 +22,12 @@ struct Header {
 
 template<>
 struct BinaryFstreamIO<vp::Header> {
-    static vp::Header read(BinaryFstream& bf) {
-        vp::Header value;
-        value.signature = bf.read_array<uint8_t, 3u>();
-        value.version.major = bf.read<uint8_t>();
-        value.version.minor = bf.read<uint8_t>();
-        value.version.patch = bf.read<uint16_t>();
-        value.depth = bf.read<uint8_t>();
-        return value;
+    static void read(BinaryFstream& bf, vp::Header& value) {
+        bf.read_array(value.signature);
+        bf.read(value.version.major);
+        bf.read(value.version.minor);
+        bf.read(value.version.patch);
+        bf.read(value.depth);
     }
 
     static void write(BinaryFstream& bf, vp::Header const& value) {
@@ -43,17 +41,13 @@ struct BinaryFstreamIO<vp::Header> {
 
 template<>
 struct BinaryFstreamIO<vp::Tree64Node> {
-    static vp::Tree64Node read(BinaryFstream& bf) {
-        vp::Tree64Node value;
-        value.up_children_mask = bf.read<uint32_t>();
-        value.down_children_mask = bf.read<uint32_t>();
-        value.is_leaf_and_first_child_node_index = bf.read<uint32_t>();
-        return value;
+    static void read(BinaryFstream& bf, vp::Tree64Node& value) {
+        bf.read(value.children_mask);
+        bf.read(value.is_leaf_and_first_child_node_index);
     }
 
     static void write(BinaryFstream& bf, vp::Tree64Node const& value) {
-        bf.write(value.up_children_mask);
-        bf.write(value.down_children_mask);
+        bf.write(value.children_mask);
         bf.write(value.is_leaf_and_first_child_node_index);
     }
 };

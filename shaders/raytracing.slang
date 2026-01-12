@@ -2,30 +2,51 @@ struct Tree64Node {
     uint up_children_mask;
     uint down_children_mask;
     uint is_leaf_and_first_child_node_index;
+
+    property uint64_t children_mask {
+        get {
+            return (uint64_t(up_children_mask) << 32ull) | uint64_t(down_children_mask);
+        }
+    }
+
+    property bool is_leaf {
+        get {
+            return (is_leaf_and_first_child_node_index & 1u) == 1u;
+        }
+    }
+
+    property uint first_child_node_index {
+        get {
+            return is_leaf_and_first_child_node_index >> 1u;
+        }
+    }
+
+    uint child_node_offset(const uint64_t child_bit) {
+        const uint64_t mask = child_bit - 1ull;
+        return countbits(mask & children_mask);
+    }
 };
-
-uint64_t children_mask(const Tree64Node node) {
-    return (uint64_t(node.up_children_mask) << 32ull) | uint64_t(node.down_children_mask);
-}
-
-uint child_node_offset(const Tree64Node node, const uint64_t child_bit) {
-    const uint64_t mask = child_bit - 1ull;
-    return countbits(mask & children_mask(node));
-}
-
-bool is_leaf(const Tree64Node node) {
-    return (node.is_leaf_and_first_child_node_index & 1u) == 1u;
-}
-
-uint first_child_node_index(const Tree64Node node) {
-    return node.is_leaf_and_first_child_node_index >> 1u;
-}
 
 static const uint MAX_TREE64_DEPTH = 11u;
 
 struct HosekWilkieSkyRenderingParameters {
     float3 config[9];
     float3 luminance;
+
+    private float3 get_sky_radiance(const float cos_theta, const float gamma, const float cos_gamma) {
+        const float3 expM = exp(config[4] * gamma);
+        const float rayM = cos_gamma * cos_gamma;
+        const float3 mieM = (1. + rayM) / pow(1. + config[8] - 2. * config[8] * cos_gamma, float3(1.5));
+        const float zenith = sqrt(cos_theta);
+        return (1. + config[0] * exp(config[1] / (cos_theta + 0.01)))
+            * (config[2] + config[3] * expM + config[5] * rayM + config[6] * mieM + config[7] * zenith);
+    }
+
+    float3 get_sky_color(const float3 ray_direction) {
+        const float cos_theta = clamp(ray_direction.y, 0., 1.);
+        const float cos_gamma = clamp(dot(ray_direction, pc.to_sun_direction), 0., 1.);
+        return get_sky_radiance(cos_theta, acos(cos_gamma), cos_gamma) * luminance;
+    }
 };
 
 struct PushConstants {
@@ -65,10 +86,10 @@ uint exp4(const uint exponent) {
     return 1u << (exponent << 1u);
 }
 
-Ray compute_ray(const float3 ray_direction) {
+Ray compute_ray(const float3 direction) {
     Ray ray;
     ray.position = pc.camera_position / float(exp4(pc.tree64_depth)) + 1.;
-    ray.direction = ray_direction;
+    ray.direction = direction;
     // Avoid division by zero
     const float epsilon = exp2(-23.);
     if (abs(ray.direction.x) < epsilon) {
@@ -105,23 +126,6 @@ uint64_t get_child_bit(const float3 position, const uint child_scale_bit_offset,
     return 1ull << ((child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask);
 }
 
-float3 get_hosek_wilkie_sky_radiance(const float cos_theta, const float gamma, const float cos_gamma) {
-    const float3 config[9] = pc.hosek_wilkie_sky_rendering_parameters.config;
-    const float3 expM = exp(config[4] * gamma);
-    const float rayM = cos_gamma * cos_gamma;
-    const float3 mieM = (1. + rayM) / pow(1. + config[8] - 2. * config[8] * cos_gamma, float3(1.5));
-    const float zenith = sqrt(cos_theta);
-    return (1. + config[0] * exp(config[1] / (cos_theta + 0.01)))
-        * (config[2] + config[3] * expM + config[5] * rayM + config[6] * mieM + config[7] * zenith);
-}
-
-float3 get_hosek_wilkie_sky_color(const float3 ray_direction) {
-    const float cos_theta = clamp(ray_direction.y, 0., 1.);
-    const float cos_gamma = clamp(dot(ray_direction, pc.to_sun_direction), 0., 1.);
-    return get_hosek_wilkie_sky_radiance(cos_theta, acos(cos_gamma), cos_gamma)
-        * pc.hosek_wilkie_sky_rendering_parameters.luminance;
-}
-
 [shader("fragment")]
 float4 main(const Interpolants input) : SV_Target {
     const float3 real_ray_direction = normalize(input.ray_direction);
@@ -145,34 +149,28 @@ float4 main(const Interpolants input) : SV_Target {
         // Descend to current node
         Tree64Node node = pc.tree64_nodes[node_index];
         uint64_t child_bit = get_child_bit(ray.position, child_scale_bit_offset, mirror_mask);
-        bool has_child_at_child_bit = (children_mask(node) & child_bit) != 0ull;
-        while (has_child_at_child_bit && !is_leaf(node)) {
+        bool has_child_at_child_bit = (node.children_mask & child_bit) != 0ull;
+        while (has_child_at_child_bit && !node.is_leaf) {
             node_index_stack[child_scale_bit_offset >> 1u] = node_index;
-
-            node_index = first_child_node_index(node) + child_node_offset(node, child_bit);
+            node_index = node.first_child_node_index + node.child_node_offset(child_bit);
             node = pc.tree64_nodes[node_index];
 
             child_scale_bit_offset -= 2u;
             child_bit = get_child_bit(ray.position, child_scale_bit_offset, mirror_mask);
-            has_child_at_child_bit = (children_mask(node) & child_bit) != 0ull;
+            has_child_at_child_bit = (node.children_mask & child_bit) != 0ull;
         }
 
         const float3 child_min = asfloat(asuint(ray.position) & (~0u << child_scale_bit_offset));
         if (has_child_at_child_bit) {
             const float scale = asfloat((child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(child_scale_bit_offset) - 23)
             const float3 distances = ((child_min + scale) - ray_origin) * ray.direction_inverse;
-            const float enter_t = max(max(distances.x, distances.z), distances.y);
-            if (enter_t == distances.x) {
-                return float4(1., 0., 0., 1.);
-            } else if (enter_t == distances.z) {
-                return float4(0., 0., 1., 1.);
-            } else {
-                return float4(0., 1., 0., 1.);
-            }
+            const float enter_t = max3(distances.x, distances.z, distances.y);
+            const int3 normal = int3(enter_t == distances) * -sign(real_ray_direction);
+            return float4(float3(normal / 2. + int3(enter_t == distances)), 1.);
         }
         // Advance to neighbor
         const float3 distances = (child_min - ray_origin) * ray.direction_inverse;
-        const float exit_t = min(min(distances.x, distances.z), distances.y);
+        const float exit_t = min3(distances.x, distances.z, distances.y);
         const uint3 child_min_as_uint = asuint(child_min);
         const float3 neighbor_max = asfloat(select(distances == exit_t, child_min_as_uint - 1u,
             child_min_as_uint | ((1u << child_scale_bit_offset) - 1u)));
@@ -190,5 +188,5 @@ float4 main(const Interpolants input) : SV_Target {
             node_index = node_index_stack[child_scale_bit_offset >> 1u];
         }
     }
-    return float4(get_hosek_wilkie_sky_color(real_ray_direction), 1.);
+    return float4(pc.hosek_wilkie_sky_rendering_parameters->get_sky_color(real_ray_direction), 1.);
 }

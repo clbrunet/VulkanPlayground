@@ -383,7 +383,7 @@ void Application::update_gui() {
         ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
     } else if (ImGui::Button("Import")) {
         start_model_import();
-    } else if (m_tree64_device_address != 0u && ImGui::Button("Save acceleration structure")) {
+    } else if (m_tree64_device_address != 0u && ImGui::Button("Save displayed acceleration structure")) {
         auto const filters = std::array{ nfdu8filteritem_t{ "Tree64", "t64" } };
         auto const path = m_window.pick_saving_path(filters, get_asset_path("models"));
         if (path.has_value()) {

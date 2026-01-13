@@ -1,11 +1,10 @@
 struct Tree64Node {
-    uint up_children_mask;
-    uint down_children_mask;
+    uint2 children_mask_uint2;
     uint is_leaf_and_first_child_node_index;
 
     property uint64_t children_mask {
         get {
-            return (uint64_t(up_children_mask) << 32ull) | uint64_t(down_children_mask);
+            return reinterpret<uint64_t>(children_mask_uint2);
         }
     }
 

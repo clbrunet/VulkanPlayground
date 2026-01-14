@@ -94,8 +94,8 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
     for_each_node([&](aiNode const& node) {
         for (auto const mesh_index : std::span(node.mMeshes, node.mNumMeshes)) {
             auto const& mesh = *scene->mMeshes[mesh_index];
-            min = glm::min(min, vec3_from_aivec3(mesh.mAABB.mMin));
-            max = glm::max(max, vec3_from_aivec3(mesh.mAABB.mMax));
+            min = glm::min(min, vec3_from(mesh.mAABB.mMin));
+            max = glm::max(max, vec3_from(mesh.mAABB.mMax));
         }
     });
     auto const model_size = max - min;
@@ -104,9 +104,9 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
     auto added_voxels = std::vector<glm::ivec3>();
     for_each_mesh([&](aiMesh const& mesh) {
         for (auto const& ai_face : std::span(mesh.mFaces, mesh.mNumFaces)) {
-            auto const a = scale * (vec3_from_aivec3(mesh.mVertices[ai_face.mIndices[0]]) - min);
-            auto const b = scale * (vec3_from_aivec3(mesh.mVertices[ai_face.mIndices[1]]) - min);
-            auto const c = scale * (vec3_from_aivec3(mesh.mVertices[ai_face.mIndices[2]]) - min);
+            auto const a = scale * (vec3_from(mesh.mVertices[ai_face.mIndices[0]]) - min);
+            auto const b = scale * (vec3_from(mesh.mVertices[ai_face.mIndices[1]]) - min);
+            auto const c = scale * (vec3_from(mesh.mVertices[ai_face.mIndices[2]]) - min);
 
             added_voxels.clear();
             auto const c_coords = glm::ivec3(c);

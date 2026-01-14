@@ -1,6 +1,7 @@
 #include "Application.hpp"
 #include "filesystem.hpp"
 #include "t64.hpp"
+#include "math.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/integer.hpp>
@@ -393,6 +394,7 @@ void Application::update_gui() {
     ImGui::SeparatorText("Sky");
     auto sky_changed = false;
     sky_changed |= ImGui::SliderAngle("Sun elevation", &m_sun_elevation, 0.f, 90.f);
+    sky_changed |= ImGui::SliderAngle("Sun rotation", &m_sun_rotation, -180.f, 180.f);
     sky_changed |= ImGui::DragFloat("Turbidity", &m_hosek_wilkie_sky_turbidity, 0.1f, 1.f, 10.f);
     sky_changed |= ImGui::DragFloat("Albedo", &m_hosek_wilkie_sky_albedo, 0.1f, 0.f, 1.f);
     if (sky_changed) {
@@ -499,7 +501,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
             .aspect_ratio = viewport.width / viewport.height,
             .camera_position = m_camera.position(),
             .camera_rotation = m_camera.rotation(),
-            .to_sun_direction = glm::vec3(0.f, glm::sin(m_sun_elevation), glm::cos(m_sun_elevation)),
+            .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
             .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
             .tree64_device_address = m_tree64_device_address,
             .tree64_depth = m_tree64_depth,

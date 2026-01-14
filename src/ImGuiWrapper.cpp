@@ -1,7 +1,9 @@
 #include "ImGuiWrapper.hpp"
+#include "math.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
+#include <glm/gtc/color_space.hpp>
 
 namespace vp {
 
@@ -20,12 +22,7 @@ ImGuiWrapper::ImGuiWrapper(Window& window, ImGui_ImplVulkan_InitInfo& init_info)
 
     // convert colors to linear for an sRGB swapchain format
     for (auto& color : ImGui::GetStyle().Colors) {
-        auto const srgb_to_linear = [](float& component) {
-            component = component <= 0.04045f ? component / 12.92f : glm::pow((component + 0.055f) / 1.055f, 2.4f);
-        };
-        srgb_to_linear(color.x);
-        srgb_to_linear(color.y);
-        srgb_to_linear(color.z);
+        color = imvec4_from(glm::convertSRGBToLinear(vec4_from(color)));
     }
 
     window.init_imgui_for_vulkan();

@@ -59,7 +59,7 @@ Application::~Application() {
 static std::optional<ContiguousTree64> model_import(std::filesystem::path const& path, uint32_t const max_side_voxel_count) {
 #if 1
     if (path.extension() == ".t64") {
-        auto const contiguous_tree64 = import_t64(path);
+        auto contiguous_tree64 = import_t64(path);
         if (!contiguous_tree64.has_value()) {
             std::cerr << "Cannot import " << string_from(path) << std::endl;
             return std::nullopt;
@@ -395,8 +395,8 @@ void Application::update_gui() {
     auto sky_changed = false;
     sky_changed |= ImGui::SliderAngle("Sun elevation", &m_sun_elevation, 0.f, 90.f);
     sky_changed |= ImGui::SliderAngle("Sun rotation", &m_sun_rotation, -180.f, 180.f);
-    sky_changed |= ImGui::DragFloat("Turbidity", &m_hosek_wilkie_sky_turbidity, 0.1f, 1.f, 10.f);
-    sky_changed |= ImGui::DragFloat("Albedo", &m_hosek_wilkie_sky_albedo, 0.1f, 0.f, 1.f);
+    sky_changed |= ImGui::SliderFloat("Turbidity", &m_hosek_wilkie_sky_turbidity, 1.f, 10.f);
+    sky_changed |= ImGui::SliderFloat("Albedo", &m_hosek_wilkie_sky_albedo, 0.f, 1.f);
     if (sky_changed) {
         update_hosek_wilkie_sky_rendering_parameters();
     }
@@ -584,7 +584,7 @@ void Application::update_hosek_wilkie_sky_rendering_parameters() {
         rendering_params.config[i] = glm::vec3(sky_model->configs[0][i], sky_model->configs[1][i], sky_model->configs[2][i]);
     }
     rendering_params.luminance = glm::vec3(sky_model->radiances[0], sky_model->radiances[1], sky_model->radiances[2])
-            * (2.f * glm::pi<float>() / 683.f), // convert from radiance to luminance
+        * (2.f * glm::pi<float>() / 683.f), // convert from radiance to luminance
     arhosekskymodelstate_free(sky_model);
 
     auto staging_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, sizeof(HosekWilkieSkyRenderingParameters), vk::BufferUsageFlagBits::eTransferSrc,

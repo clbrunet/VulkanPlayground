@@ -35,7 +35,7 @@ struct HosekWilkieSkyRenderingParameters {
     private float3 get_sky_radiance(const float cos_theta, const float gamma, const float cos_gamma) {
         const float3 expM = exp(config[4] * gamma);
         const float rayM = cos_gamma * cos_gamma;
-        const float3 mieM = (1. + rayM) / pow(1. + config[8] - 2. * config[8] * cos_gamma, float3(1.5));
+        const float3 mieM = (1. + rayM) / pow(1. + config[8] * config[8] - 2. * config[8] * cos_gamma, float3(1.5));
         const float zenith = sqrt(cos_theta);
         return (1. + config[0] * exp(config[1] / (cos_theta + 0.01)))
             * (config[2] + config[3] * expM + config[5] * rayM + config[6] * mieM + config[7] * zenith);

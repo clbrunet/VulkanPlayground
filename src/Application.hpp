@@ -101,7 +101,7 @@ private:
 
     float m_sun_rotation = glm::radians(0.f);
     float m_sun_elevation = glm::radians(45.f);
-    float m_hosek_wilkie_sky_turbidity = 3.f;
+    float m_hosek_wilkie_sky_turbidity = 4.f;
     float m_hosek_wilkie_sky_albedo = 0.3f;
     VmaRaiiBuffer m_hosek_wilkie_sky_rendering_parameters_buffer = VmaRaiiBuffer(nullptr);
     vk::DeviceAddress m_hosek_wilkie_sky_rendering_parameters_device_address = 0u;

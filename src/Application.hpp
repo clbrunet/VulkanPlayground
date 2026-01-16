@@ -96,8 +96,8 @@ private:
     uint32_t m_max_side_voxel_count_to_import = 1024;
     std::future<std::optional<ContiguousTree64>> m_model_import_future;
     uint8_t m_tree64_depth = 0u;
-    VmaRaiiBuffer m_tree64_buffer = VmaRaiiBuffer(nullptr);
-    vk::DeviceAddress m_tree64_device_address = 0u;
+    VmaRaiiBuffer m_tree64_nodes_buffer = VmaRaiiBuffer(nullptr);
+    vk::DeviceAddress m_tree64_nodes_device_address = 0u;
 
     float m_sun_rotation = glm::radians(0.f);
     float m_sun_elevation = glm::radians(45.f);

@@ -22,14 +22,17 @@
 namespace vp {
 
 #pragma pack(push, 1)
+struct GpuTree64 {
+    vk::DeviceAddress tree64_nodes_device_address;
+    uint32_t depth;
+};
 struct PushConstants {
     float aspect_ratio;
     glm::vec3 camera_position;
     glm::mat3 camera_rotation;
     glm::vec3 to_sun_direction;
     vk::DeviceAddress hosek_wilkie_sky_rendering_parameters_device_address;
-    vk::DeviceAddress tree64_device_address;
-    uint32_t tree64_depth;
+    GpuTree64 tree64;
 };
 
 struct HosekWilkieSkyRenderingParameters {
@@ -79,13 +82,13 @@ static std::optional<ContiguousTree64> model_import(std::filesystem::path const&
     }
 #else
     auto const begin_time = std::chrono::high_resolution_clock::now();
-    auto tree64 = std::make_optional(Tree64(2u));
+    auto tree64 = std::make_optional(Tree64(1u));
     tree64->add_voxel(glm::uvec3(0u, 0u, 0u));
     tree64->add_voxel(glm::uvec3(1u, 1u, 0u));
     tree64->add_voxel(glm::uvec3(0u, 1u, 1u));
-    tree64->add_voxel(glm::uvec3(4u, 0u, 0u));
-    tree64->add_voxel(glm::uvec3(0u, 0u, 4u));
-    tree64->add_voxel(glm::uvec3(8u, 0u, 0u));
+    // tree64->add_voxel(glm::uvec3(4u, 0u, 0u));
+    // tree64->add_voxel(glm::uvec3(0u, 0u, 4u));
+    // tree64->add_voxel(glm::uvec3(8u, 0u, 0u));
     // tree64->add_voxel(glm::uvec3(32u, 0u, 0u));
 #endif
 
@@ -384,7 +387,7 @@ void Application::update_gui() {
         ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
     } else if (ImGui::Button("Import")) {
         start_model_import();
-    } else if (m_tree64_device_address != 0u && ImGui::Button("Save displayed acceleration structure")) {
+    } else if (m_tree64_nodes_device_address != 0u && ImGui::Button("Save displayed acceleration structure")) {
         auto const filters = std::array{ nfdu8filteritem_t{ "Tree64", "t64" } };
         auto const path = m_window.pick_saving_path(filters, get_asset_path("models"));
         if (path.has_value()) {
@@ -503,8 +506,10 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
             .camera_rotation = m_camera.rotation(),
             .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
             .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
-            .tree64_device_address = m_tree64_device_address,
-            .tree64_depth = m_tree64_depth,
+            .tree64 {
+                .tree64_nodes_device_address = m_tree64_nodes_device_address,
+                .depth = m_tree64_depth,
+            },
         };
         command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
@@ -554,22 +559,22 @@ void Application::create_tree64_buffer(std::span<Tree64Node const> const nodes) 
     staging_buffer.copy_memory_to_allocation(reinterpret_cast<uint8_t const*>(std::data(nodes)), 0u, buffer_size);
 
     m_vk_ctx.device.waitIdle();
-    m_tree64_buffer.destroy();
-    m_tree64_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
+    m_tree64_nodes_buffer.destroy();
+    m_tree64_nodes_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
         | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferSrc,
         0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-    copy_buffer(staging_buffer, m_tree64_buffer, buffer_size);
+    copy_buffer(staging_buffer, m_tree64_nodes_buffer, buffer_size);
 
-    m_tree64_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
-        .buffer = m_tree64_buffer,
+    m_tree64_nodes_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
+        .buffer = m_tree64_nodes_buffer,
     });
 }
 
 void Application::save_acceleration_structure(std::filesystem::path const& path) {
-    auto const buffer_size = m_tree64_buffer.size();
+    auto const buffer_size = m_tree64_nodes_buffer.size();
     auto dst_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, VMA_MEMORY_USAGE_AUTO);
-    copy_buffer(m_tree64_buffer, dst_buffer, buffer_size);
+    copy_buffer(m_tree64_nodes_buffer, dst_buffer, buffer_size);
     auto nodes = std::vector<Tree64Node>(buffer_size / sizeof(Tree64Node));
     dst_buffer.copy_allocation_to_memory(0u, std::span(reinterpret_cast<uint8_t*>(std::data(nodes)), buffer_size));
     if (!save_t64(path, ContiguousTree64{ .depth = m_tree64_depth, .nodes = std::move(nodes) })) {

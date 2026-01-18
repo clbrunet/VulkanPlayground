@@ -93,8 +93,8 @@ struct Tree64 {
         }
         // Mirror the ray and coordinates to optimize the traversal, knowing that the ray moves in the negative direction
         const float3 mirrored_ray_origin = select(ray.direction <= 0., ray.position, 3. - ray.position);
-        const uint mirror_mask = uint(ray.direction.x > 0.) * 0x03u
-            | uint(ray.direction.z > 0.) * 0x0Cu | uint(ray.direction.y > 0.) * 0x30u;
+        const uint mirror_mask = uint(ray.direction.x > 0.) * 0b000011u
+            | uint(ray.direction.z > 0.) * 0b001100u | uint(ray.direction.y > 0.) * 0b110000u;
         ray.direction = -abs(ray.direction);
         ray.direction_inverse = 1. / ray.direction;
         ray.position = clamp(mirrored_ray_origin + t * ray.direction, float3(1.), float3(1.99999988079071044921875));
@@ -137,8 +137,8 @@ struct Tree64 {
 
             // Ascend back to higher non-exited node
             const uint3 binary_diff = asuint(ray.position) ^ child_min_as_uint;
-            // & with 0b11111111101010101010101010101010u to check only for odd offsets (quarter of nodes) and for root exit with the leading 1s
-            const uint binary_diff_offset = firstbithigh((binary_diff.x | binary_diff.y | binary_diff.z) & 0xFFAAAAAAu);
+            const uint binary_diff_offset = firstbithigh((binary_diff.x | binary_diff.y | binary_diff.z)
+                & 0b11111111101010101010101010101010u); // check only for odd offsets (quarter of nodes) and for root exit with the leading 1s
             if (binary_diff_offset > child_scale_bit_offset) {
                 if (binary_diff_offset > 21u) {
                     break; // out of root
@@ -197,12 +197,18 @@ Interpolants main(const uint vertex_id : SV_VertexID) {
     return output;
 }
 
+float ease_in_quad(float t) {
+    return t * t;
+}
+
 [shader("fragment")]
 float4 main(const Interpolants input) : SV_Target {
-    Ray ray = Ray(pc.camera_position, normalize(input.ray_direction));
+    let ray = Ray(pc.camera_position, normalize(input.ray_direction));
     if (let hit = pc.tree64.raycast(ray)) {
-        // return float4(hit.position / float(exp4(pc.tree64.depth)), 1.);
-        return float4(float3(max(dot(hit.normal, pc.to_sun_direction), 0.2)), 1.);
+        let to_sun_hit = pc.tree64.raycast(Ray(hit.position + hit.normal * 0.01, pc.to_sun_direction));
+        let light_multiplier = to_sun_hit.hasValue ? 0.5 : 1.;
+        let diffuse = ease_in_quad(dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5);
+        return float4(float3(light_multiplier * diffuse), 1.);
     }
     return float4(pc.hosek_wilkie_sky_rendering_parameters->get_sky_color(ray.direction), 1.);
 }

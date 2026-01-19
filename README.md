@@ -2,7 +2,7 @@
 
 Voxel traversal and Vulkan Playground
 
-<img width="1920" height="1032" alt="Screenshot 2026-01-03 205059" src="https://github.com/user-attachments/assets/2c20b56e-a5b4-41d3-ba9c-9dfa6c969bf5" />
+<img width="1522" height="887" alt="Screenshot 2026-01-19 075308" src="https://github.com/user-attachments/assets/bffee545-49b4-4576-8a2f-59a1ed05846c" />
 
 ## Building
 

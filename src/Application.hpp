@@ -73,7 +73,7 @@ private:
     });
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
 
-    Window m_window = Window("Vulkan Playground", 1280u, 720u);
+    Window m_window = Window("Vulkan Playground", glm::uvec2(16u, 9u) * 80u);
     bool m_should_recreate_swapchain = false;
 
     VulkanContext m_vk_ctx = VulkanContext(nullptr);

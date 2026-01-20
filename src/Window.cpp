@@ -17,7 +17,7 @@
 
 namespace vp {
 
-Window::Window(char const* const title, uint16_t const width, uint16_t const height) {
+Window::Window(char const* const title, glm::uvec2 const dimensions) {
     glfwSetErrorCallback([](int const error, char const* const description) noexcept {
         std::cerr << "GLFW error " << error << ": " << description << std::endl;
     });
@@ -25,7 +25,7 @@ Window::Window(char const* const title, uint16_t const width, uint16_t const hei
         throw std::runtime_error("glfwInit");
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    m_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    m_window = glfwCreateWindow(static_cast<int>(dimensions.x), static_cast<int>(dimensions.y), title, nullptr, nullptr);
     if (m_window == nullptr) {
         throw std::runtime_error("glfwCreateWindow");
     }

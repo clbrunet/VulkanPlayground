@@ -45,7 +45,8 @@ Application::Application() {
     // m_model_path_to_import = get_asset_path("models/sponza.vox");
     // m_model_path_to_import = get_asset_path("models/bistro_exterior.glb");
     m_model_path_to_import = get_asset_path("models/bistro_exterior_8k.t64");
-    // m_camera.set_position(glm::vec3(0.f, 450.f, 0.f));
+    // m_camera.set_position(glm::vec3(15.5f, 120.f, 17.5f));
+    // m_camera.set_euler_angles(glm::radians(glm::vec2(0.f, 45.f)));
     // m_model_path_to_import = get_asset_path("models/sponza.t64");
     start_model_import();
     init_window();

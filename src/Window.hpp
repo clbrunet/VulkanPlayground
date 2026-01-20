@@ -12,7 +12,7 @@ namespace vp {
 
 class Window {
 public:
-    Window(char const* title, uint16_t width, uint16_t height);
+    Window(char const* title, glm::uvec2 dimensions);
 
     Window(Window const& other) = delete;
     Window(Window&& other) noexcept;

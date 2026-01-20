@@ -62,9 +62,13 @@ struct Tree64Node {
         }
     }
 
-    uint child_node_offset(const uint64_t child_bit) {
-        const uint64_t mask = child_bit - 1ull;
-        return countbits(mask & children_mask);
+    uint child_node_offset(const uint child_bit_index) {
+        let before_child_mask = (1ull << child_bit_index) - 1ull;
+        return countbits(children_mask & before_child_mask);
+    }
+
+    bool has_child_at_bit_index(const uint child_bit_index) {
+        return (children_mask & (1ull << child_bit_index)) != 0ull;
     }
 };
 
@@ -75,13 +79,14 @@ struct Hit {
 };
 
 struct Tree64 {
-    static const uint MAX_DEPTH = 11u;
+    static const uint UNUSED_DEPTH = 4u; // TODO: maybe set it as a specialization constant to get the maximum performance out of the rendered trees
+    static const uint MAX_DEPTH = 11u - UNUSED_DEPTH;
     Tree64Node* nodes;
     uint depth;
 
-    static uint64_t get_child_bit(const float3 position, const uint child_scale_bit_offset, const uint mirror_mask) {
+    static uint get_child_bit_index(const float3 position, const uint child_scale_bit_offset, const uint mirror_mask) {
         const uint3 child_coords = (asuint(position) >> child_scale_bit_offset) & 3u;
-        return 1ull << ((child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask);
+        return (child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask;
     }
 
     Optional<Hit> raycast(const Ray ray_origin) {
@@ -105,21 +110,24 @@ struct Tree64 {
         for (uint i = 0u; i < 2000u; ++i) {
             // Descend to current node
             Tree64Node node = nodes[node_index];
-            uint64_t child_bit = get_child_bit(ray.position, child_scale_bit_offset, mirror_mask);
-            bool has_child_at_child_bit = (node.children_mask & child_bit) != 0ull;
+            uint child_bit_index = get_child_bit_index(ray.position, child_scale_bit_offset, mirror_mask);
+            bool has_child_at_child_bit = node.has_child_at_bit_index(child_bit_index);
             while (has_child_at_child_bit && !node.is_leaf) {
-                node_index_stack[child_scale_bit_offset >> 1u] = node_index;
-                node_index = node.first_child_node_index + node.child_node_offset(child_bit);
+                node_index_stack[(child_scale_bit_offset >> 1u) - UNUSED_DEPTH] = node_index;
+                node_index = node.first_child_node_index + node.child_node_offset(child_bit_index);
                 node = nodes[node_index];
 
                 child_scale_bit_offset -= 2u;
-                child_bit = get_child_bit(ray.position, child_scale_bit_offset, mirror_mask);
-                has_child_at_child_bit = (node.children_mask & child_bit) != 0ull;
+                child_bit_index = get_child_bit_index(ray.position, child_scale_bit_offset, mirror_mask);
+                has_child_at_child_bit = node.has_child_at_bit_index(child_bit_index);
             }
+            // Check if there is no children in the entire octant to maybe skip unnecessary iterations
+            const uint coarse_child_scale_bit_offset = child_scale_bit_offset
+                + uint((node.children_mask & (0b00000000001100110000000000110011ull << (child_bit_index & 0b101010ull))) == 0u);
 
-            const float3 child_min = asfloat(asuint(ray.position) & (~0u << child_scale_bit_offset));
+            const float3 child_min = asfloat(asuint(ray.position) & (~0u << coarse_child_scale_bit_offset));
             if (has_child_at_child_bit) {
-                const float scale = asfloat((child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(child_scale_bit_offset) - 23)
+                const float scale = asfloat((coarse_child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(coarse_child_scale_bit_offset) - 23)
                 const float3 distances = ((child_min + scale) - mirrored_ray_origin) * ray.direction_inverse;
                 const float enter_t = max3(distances.x, distances.z, distances.y);
                 const float world_distance = enter_t * float(exp4(depth));
@@ -132,7 +140,7 @@ struct Tree64 {
             const float exit_t = min3(distances.x, distances.z, distances.y);
             const uint3 child_min_as_uint = asuint(child_min);
             const float3 neighbor_max = asfloat(select(distances == exit_t, child_min_as_uint - 1u,
-                child_min_as_uint | ((1u << child_scale_bit_offset) - 1u)));
+                child_min_as_uint | ((1u << coarse_child_scale_bit_offset) - 1u)));
             ray.position = min(mirrored_ray_origin + exit_t * ray.direction, neighbor_max);
 
             // Ascend back to higher non-exited node
@@ -144,7 +152,7 @@ struct Tree64 {
                     break; // out of root
                 }
                 child_scale_bit_offset = binary_diff_offset;
-                node_index = node_index_stack[child_scale_bit_offset >> 1u];
+                node_index = node_index_stack[(child_scale_bit_offset >> 1u) - UNUSED_DEPTH];
             }
         }
         return none;

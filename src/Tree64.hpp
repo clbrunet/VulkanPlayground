@@ -53,7 +53,7 @@ struct BuildingTree64Node {
 
 class Tree64 {
 public:
-    static constexpr auto MAX_DEPTH = uint8_t{ 11u };
+    static constexpr auto MAX_DEPTH = uint8_t{ 11u - 4u }; // must match traversal shaders
 
     [[nodiscard]] static std::optional<Tree64> voxelize_model(std::filesystem::path const& path, uint32_t max_side_voxel_count);
     [[nodiscard]] static std::optional<Tree64> import_vox(std::filesystem::path const& path);

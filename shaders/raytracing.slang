@@ -8,30 +8,24 @@ struct Ray {
     float3 direction_inverse;
 
     __init(const float3 position, const float3 direction) {
-        Ray ray;
-        ray.position = position;
-        ray.direction = direction;
-        ray.direction_inverse = 1. / ray.direction;
-        return ray;
+        this = Ray(position, direction, 1. / direction);
     }
 
     __init(const float3 position, const float3 direction, const float3 direction_inverse) {
-        Ray ray;
-        ray.position = position;
-        ray.direction = direction;
-        ray.direction_inverse = direction_inverse;
-        return ray;
+        this.position = position;
+        this.direction = direction;
+        this.direction_inverse = direction_inverse;
     }
 
     float aabb_intersection(const float3 aabb_min, const float3 aabb_max) {
-        const float3 t1 = (aabb_min - position) * direction_inverse;
-        const float3 t2 = (aabb_max - position) * direction_inverse;
+        let t1 = (aabb_min - position) * direction_inverse;
+        let t2 = (aabb_max - position) * direction_inverse;
 
-        const float3 t_mins = min(t1, t2);
-        const float3 t_maxs = max(t1, t2);
+        let t_mins = min(t1, t2);
+        let t_maxs = max(t1, t2);
 
-        const float t_min = max3(t_mins.x, t_mins.y, t_mins.z);
-        const float t_max = min3(t_maxs.x, t_maxs.y, t_maxs.z);
+        let t_min = max3(t_mins.x, t_mins.y, t_mins.z);
+        let t_max = min3(t_maxs.x, t_maxs.y, t_maxs.z);
 
         if (t_min > t_max || t_max < 0.) {
             return -1.;
@@ -85,33 +79,33 @@ struct Tree64 {
     uint depth;
 
     static uint get_child_bit_index(const float3 position, const uint child_scale_bit_offset, const uint mirror_mask) {
-        const uint3 child_coords = (asuint(position) >> child_scale_bit_offset) & 3u;
+        let child_coords = (asuint(position) >> child_scale_bit_offset) & 3u;
         return (child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask;
     }
 
     Optional<Hit> raycast(const Ray ray_origin) {
-        const float depth_exp4 = float(exp4(depth));
-        Ray ray = Ray(ray_origin.position / depth_exp4 + 1., ray_origin.direction, ray_origin.direction_inverse);
-        const float t = ray.aabb_intersection(float3(1.), float3(2.));
+        let depth_exp4 = float(exp4(depth));
+        var ray = Ray(ray_origin.position / depth_exp4 + 1., ray_origin.direction, ray_origin.direction_inverse);
+        let t = ray.aabb_intersection(float3(1.), float3(2.));
         if (t == -1.) {
             return none;
         }
         // Mirror the ray and coordinates to optimize the traversal, knowing that the ray moves in the negative direction
-        const float3 mirrored_ray_origin = select(ray.direction <= 0., ray.position, 3. - ray.position);
-        const uint mirror_mask = uint(ray.direction.x > 0.) * 0b000011u
+        let mirrored_ray_origin = select(ray.direction <= 0., ray.position, 3. - ray.position);
+        let mirror_mask = uint(ray.direction.x > 0.) * 0b000011u
             | uint(ray.direction.z > 0.) * 0b001100u | uint(ray.direction.y > 0.) * 0b110000u;
         ray.direction = -abs(ray.direction);
         ray.direction_inverse = 1. / ray.direction;
         ray.position = clamp(mirrored_ray_origin + t * ray.direction, float3(1.), float3(1.99999988079071044921875));
 
-        uint node_index_stack[MAX_DEPTH];
-        uint node_index = 0u;
-        uint child_scale_bit_offset = 21u;
+        var node_index_stack: uint[MAX_DEPTH];
+        var node_index = 0u;
+        var child_scale_bit_offset = 21u;
         for (uint i = 0u; i < 2000u; ++i) {
             // Descend to current node
-            Tree64Node node = nodes[node_index];
-            uint child_bit_index = get_child_bit_index(ray.position, child_scale_bit_offset, mirror_mask);
-            bool has_child_at_child_bit = node.has_child_at_bit_index(child_bit_index);
+            var node = nodes[node_index];
+            var child_bit_index = get_child_bit_index(ray.position, child_scale_bit_offset, mirror_mask);
+            var has_child_at_child_bit = node.has_child_at_bit_index(child_bit_index);
             while (has_child_at_child_bit && !node.is_leaf) {
                 node_index_stack[(child_scale_bit_offset >> 1u) - UNUSED_DEPTH] = node_index;
                 node_index = node.first_child_node_index + node.child_node_offset(child_bit_index);
@@ -122,30 +116,30 @@ struct Tree64 {
                 has_child_at_child_bit = node.has_child_at_bit_index(child_bit_index);
             }
             // Check if there is no children in the entire octant to maybe skip unnecessary iterations
-            const uint coarse_child_scale_bit_offset = child_scale_bit_offset
+            let coarse_child_scale_bit_offset = child_scale_bit_offset
                 + uint((node.children_mask & (0b00000000001100110000000000110011ull << (child_bit_index & 0b101010ull))) == 0u);
 
-            const float3 child_min = asfloat(asuint(ray.position) & (~0u << coarse_child_scale_bit_offset));
+            let child_min = asfloat(asuint(ray.position) & (~0u << coarse_child_scale_bit_offset));
             if (has_child_at_child_bit) {
-                const float scale = asfloat((coarse_child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(coarse_child_scale_bit_offset) - 23)
-                const float3 distances = ((child_min + scale) - mirrored_ray_origin) * ray.direction_inverse;
-                const float enter_t = max3(distances.x, distances.z, distances.y);
-                const float world_distance = enter_t * float(exp4(depth));
-                const float3 position = ray_origin.position + world_distance * ray_origin.direction;
-                const int3 normal = int3(enter_t == distances) * -sign(ray_origin.direction);
+                let scale = asfloat((coarse_child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(coarse_child_scale_bit_offset) - 23)
+                let distances = ((child_min + scale) - mirrored_ray_origin) * ray.direction_inverse;
+                let enter_t = max3(distances.x, distances.z, distances.y);
+                let world_distance = enter_t * float(exp4(depth));
+                let position = ray_origin.position + world_distance * ray_origin.direction;
+                let normal = int3(enter_t == distances) * -sign(ray_origin.direction);
                 return Hit(enter_t, position, normal);
             }
             // Advance to neighbor
-            const float3 distances = (child_min - mirrored_ray_origin) * ray.direction_inverse;
-            const float exit_t = min3(distances.x, distances.z, distances.y);
-            const uint3 child_min_as_uint = asuint(child_min);
-            const float3 neighbor_max = asfloat(select(distances == exit_t, child_min_as_uint - 1u,
+            let distances = (child_min - mirrored_ray_origin) * ray.direction_inverse;
+            let exit_t = min3(distances.x, distances.z, distances.y);
+            let child_min_as_uint = asuint(child_min);
+            let neighbor_max = asfloat(select(distances == exit_t, child_min_as_uint - 1u,
                 child_min_as_uint | ((1u << coarse_child_scale_bit_offset) - 1u)));
             ray.position = min(mirrored_ray_origin + exit_t * ray.direction, neighbor_max);
 
             // Ascend back to higher non-exited node
-            const uint3 binary_diff = asuint(ray.position) ^ child_min_as_uint;
-            const uint binary_diff_offset = firstbithigh((binary_diff.x | binary_diff.y | binary_diff.z)
+            let binary_diff = asuint(ray.position) ^ child_min_as_uint;
+            let binary_diff_offset = firstbithigh((binary_diff.x | binary_diff.y | binary_diff.z)
                 & 0b11111111101010101010101010101010u); // check only for odd offsets (quarter of nodes) and for root exit with the leading 1s
             if (binary_diff_offset > child_scale_bit_offset) {
                 if (binary_diff_offset > 21u) {
@@ -164,17 +158,17 @@ struct HosekWilkieSkyRenderingParameters {
     float3 luminance;
 
     private float3 get_sky_radiance(const float cos_theta, const float gamma, const float cos_gamma) {
-        const float3 expM = exp(config[4] * gamma);
-        const float rayM = cos_gamma * cos_gamma;
-        const float3 mieM = (1. + rayM) / pow(1. + config[8] * config[8] - 2. * config[8] * cos_gamma, float3(1.5));
-        const float zenith = sqrt(cos_theta);
+        let expM = exp(config[4] * gamma);
+        let rayM = cos_gamma * cos_gamma;
+        let mieM = (1. + rayM) / pow(1. + config[8] * config[8] - 2. * config[8] * cos_gamma, float3(1.5));
+        let zenith = sqrt(cos_theta);
         return (1. + config[0] * exp(config[1] / (cos_theta + 0.01)))
             * (config[2] + config[3] * expM + config[5] * rayM + config[6] * mieM + config[7] * zenith);
     }
 
     float3 get_sky_color(const float3 ray_direction) {
-        const float cos_theta = clamp(ray_direction.y, 0., 1.);
-        const float cos_gamma = clamp(dot(ray_direction, pc.to_sun_direction), 0., 1.);
+        let cos_theta = clamp(ray_direction.y, 0., 1.);
+        let cos_gamma = clamp(dot(ray_direction, pc.to_sun_direction), 0., 1.);
         return get_sky_radiance(cos_theta, acos(cos_gamma), cos_gamma) * luminance;
     }
 };
@@ -197,12 +191,11 @@ struct Interpolants {
 
 [shader("vertex")]
 Interpolants main(const uint vertex_id : SV_VertexID) {
-    float x = -1. + float((vertex_id & 1u) << 2u);
-    float y = -1. + float((vertex_id & 2u) << 1u);
-    Interpolants output;
-    output.position = float4(x, y, 1., 1.);
-    output.ray_direction = mul(pc.camera_rotation, float3(x * pc.aspect_ratio, -y, 1.));
-    return output;
+    let x = -1. + float((vertex_id & 1u) << 2u);
+    let y = -1. + float((vertex_id & 2u) << 1u);
+    let position = float4(x, y, 1., 1.);
+    let ray_direction = mul(pc.camera_rotation, float3(x * pc.aspect_ratio, -y, 1.));
+    return Interpolants(position, ray_direction);
 }
 
 float ease_in_quad(float t) {

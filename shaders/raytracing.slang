@@ -17,20 +17,25 @@ struct Ray {
         this.direction_inverse = direction_inverse;
     }
 
-    float aabb_intersection(const float3 aabb_min, const float3 aabb_max) {
-        let t1 = (aabb_min - position) * direction_inverse;
-        let t2 = (aabb_max - position) * direction_inverse;
+    struct AabbIntersection {
+        float enter_distance;
+        float3 enter_distances;
+    };
 
-        let t_mins = min(t1, t2);
-        let t_maxs = max(t1, t2);
+    Optional<AabbIntersection> aabb_intersection(const float3 aabb_min, const float3 aabb_max) {
+        let aabb_min_ts = (aabb_min - position) * direction_inverse;
+        let aabb_max_ts = (aabb_max - position) * direction_inverse;
 
-        let t_min = max3(t_mins.x, t_mins.y, t_mins.z);
-        let t_max = min3(t_maxs.x, t_maxs.y, t_maxs.z);
+        let enter_ts = min(aabb_min_ts, aabb_max_ts);
+        let exit_ts = max(aabb_min_ts, aabb_max_ts);
 
-        if (t_min > t_max || t_max < 0.) {
-            return -1.;
+        let enter_t = max3(enter_ts.x, enter_ts.y, enter_ts.z);
+        let exit_t = min3(exit_ts.x, exit_ts.y, exit_ts.z);
+
+        if (enter_t > exit_t || exit_t < 0.) {
+            return none;
         }
-        return max(t_min, 0.);
+        return AabbIntersection(enter_t, enter_ts);
     }
 };
 
@@ -83,11 +88,17 @@ struct Tree64 {
         return (child_coords.x + child_coords.z * 4u + child_coords.y * 16u) ^ mirror_mask;
     }
 
-    Optional<Hit> raycast(const Ray ray_origin) {
+    Optional<Hit> raycast(const Ray ray_origin, float max_distance) {
         let depth_exp4 = float(exp4(depth));
         var ray = Ray(ray_origin.position / depth_exp4 + 1., ray_origin.direction, ray_origin.direction_inverse);
-        let t = ray.aabb_intersection(float3(1.), float3(2.));
-        if (t == -1.) {
+        let aabb_intersection = ray.aabb_intersection(float3(1.), float3(2.));
+        if (!aabb_intersection.hasValue) {
+            return none;
+        }
+        var current_distance = max(aabb_intersection.value.enter_distance, 0.);
+        var current_distances = aabb_intersection.value.enter_distances;
+        max_distance /= depth_exp4;
+        if (current_distance >= max_distance) {
             return none;
         }
         // Mirror the ray and coordinates to optimize the traversal, knowing that the ray moves in the negative direction
@@ -96,12 +107,12 @@ struct Tree64 {
             | uint(ray.direction.z > 0.) * 0b001100u | uint(ray.direction.y > 0.) * 0b110000u;
         ray.direction = -abs(ray.direction);
         ray.direction_inverse = 1. / ray.direction;
-        ray.position = clamp(mirrored_ray_origin + t * ray.direction, float3(1.), float3(1.99999988079071044921875));
+        ray.position = clamp(mirrored_ray_origin + current_distance * ray.direction, float3(1.), float3(1.99999988079071044921875));
 
         var node_index_stack: uint[MAX_DEPTH];
         var node_index = 0u;
         var child_scale_bit_offset = 21u;
-        for (uint i = 0u; i < 2000u; ++i) {
+        while (true) {
             // Descend to current node
             var node = nodes[node_index];
             var child_bit_index = get_child_bit_index(ray.position, child_scale_bit_offset, mirror_mask);
@@ -121,21 +132,21 @@ struct Tree64 {
 
             let child_min = asfloat(asuint(ray.position) & (~0u << coarse_child_scale_bit_offset));
             if (has_child_at_child_bit) {
-                let scale = asfloat((coarse_child_scale_bit_offset + 127u - 23u) << 23u); // exp2(int(coarse_child_scale_bit_offset) - 23)
-                let distances = ((child_min + scale) - mirrored_ray_origin) * ray.direction_inverse;
-                let enter_t = max3(distances.x, distances.z, distances.y);
-                let world_distance = enter_t * float(exp4(depth));
+                let world_distance = current_distance * depth_exp4;
                 let position = ray_origin.position + world_distance * ray_origin.direction;
-                let normal = int3(enter_t == distances) * -sign(ray_origin.direction);
-                return Hit(enter_t, position, normal);
+                let normal = int3(current_distance == current_distances) * -sign(ray_origin.direction);
+                return Hit(world_distance, position, normal);
             }
             // Advance to neighbor
-            let distances = (child_min - mirrored_ray_origin) * ray.direction_inverse;
-            let exit_t = min3(distances.x, distances.z, distances.y);
+            current_distances = (child_min - mirrored_ray_origin) * ray.direction_inverse;
+            current_distance = min3(current_distances.x, current_distances.z, current_distances.y);
+            if (current_distance >= max_distance) {
+                break;
+            }
             let child_min_as_uint = asuint(child_min);
-            let neighbor_max = asfloat(select(distances == exit_t, child_min_as_uint - 1u,
+            let neighbor_max = asfloat(select(current_distances == current_distance, child_min_as_uint - 1u,
                 child_min_as_uint | ((1u << coarse_child_scale_bit_offset) - 1u)));
-            ray.position = min(mirrored_ray_origin + exit_t * ray.direction, neighbor_max);
+            ray.position = min(mirrored_ray_origin + current_distance * ray.direction, neighbor_max);
 
             // Ascend back to higher non-exited node
             let binary_diff = asuint(ray.position) ^ child_min_as_uint;
@@ -198,18 +209,17 @@ Interpolants main(const uint vertex_id : SV_VertexID) {
     return Interpolants(position, ray_direction);
 }
 
-float ease_in_quad(float t) {
-    return t * t;
-}
-
 [shader("fragment")]
 float4 main(const Interpolants input) : SV_Target {
     let ray = Ray(pc.camera_position, normalize(input.ray_direction));
-    if (let hit = pc.tree64.raycast(ray)) {
-        let to_sun_hit = pc.tree64.raycast(Ray(hit.position + hit.normal * 0.01, pc.to_sun_direction));
-        let light_multiplier = to_sun_hit.hasValue ? 0.5 : 1.;
-        let diffuse = ease_in_quad(dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5);
-        return float4(float3(light_multiplier * diffuse), 1.);
+    if (let hit = pc.tree64.raycast(ray, 1.e6)) {
+        let half_lambert_diffuse_factor = dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5;
+        var light_multiplier = 0.5;
+        if (half_lambert_diffuse_factor > 0.5) {
+            let to_sun_hit = pc.tree64.raycast(Ray(hit.position + hit.normal * 0.005, pc.to_sun_direction), 1.e6);
+            light_multiplier = to_sun_hit.hasValue ? 0.5 : 1.;
+        }
+        return float4(float3(light_multiplier * half_lambert_diffuse_factor), 1.);
     }
     return float4(pc.hosek_wilkie_sky_rendering_parameters->get_sky_color(ray.direction), 1.);
 }

@@ -137,7 +137,25 @@ void Application::init_window() {
 }
 
 void Application::init_vulkan() {
-    m_vk_ctx = VulkanContext(m_window, DEVICE_REQUIRED_EXTENSIONS);
+    auto const required_device_extensions = std::to_array({ vk::KHRSwapchainExtensionName });
+    auto const required_features = vk::StructureChain(
+        vk::PhysicalDeviceFeatures2{ .features = vk::PhysicalDeviceFeatures{
+            .depthClamp = vk::True,
+            .shaderInt64 = vk::True,
+        } },
+        vk::PhysicalDeviceVulkan11Features{
+            .shaderDrawParameters = vk::True,
+        },
+        vk::PhysicalDeviceVulkan12Features{
+            .scalarBlockLayout = vk::True,
+            .bufferDeviceAddress = vk::True,
+        },
+        vk::PhysicalDeviceVulkan13Features{
+            .synchronization2 = vk::True,
+            .dynamicRendering = vk::True,
+        }
+    );
+    m_vk_ctx = VulkanContext(m_window, required_device_extensions, required_features);
     std::cout << "Selected GPU : " << m_vk_ctx.physical_device.getProperties().deviceName << std::endl;
     auto const present_modes = m_vk_ctx.physical_device.getSurfacePresentModesKHR(m_vk_ctx.surface);
     m_has_immediate_present_mode = std::ranges::find(present_modes, vk::PresentModeKHR::eImmediate) != std::end(present_modes);
@@ -164,8 +182,6 @@ void Application::recreate_swapchain() {
 }
 
 void Application::create_graphics_pipeline() {
-    auto const rendering_create_info = pipeline_rendering_create_info();
-
     auto const shader_module = create_shader_module("raytracing.spv");
     auto const shader_stages = std::array{
         vk::PipelineShaderStageCreateInfo{
@@ -239,22 +255,24 @@ void Application::create_graphics_pipeline() {
     };
     m_pipeline_layout = vk::raii::PipelineLayout(m_vk_ctx.device, pipeline_layout_create_info);
 
-    auto const create_info = vk::GraphicsPipelineCreateInfo{
-        .pNext = &rendering_create_info,
-        .stageCount = static_cast<uint32_t>(std::size(shader_stages)),
-        .pStages = std::data(shader_stages),
-        .pVertexInputState = &vertex_input_state_create_info,
-        .pInputAssemblyState = &input_assembly_state_create_info,
-        .pTessellationState = nullptr,
-        .pViewportState = &viewport_state_create_info,
-        .pRasterizationState = &rasterization_state_create_info,
-        .pMultisampleState = &multisample_state_create_info,
-        .pDepthStencilState = nullptr,
-        .pColorBlendState = &color_blend_state_create_info,
-        .pDynamicState = &dynamic_state_create_info,
-        .layout = m_pipeline_layout,
-    };
-    m_graphics_pipeline = vk::raii::Pipeline(m_vk_ctx.device, nullptr, create_info);
+    auto const create_info = vk::StructureChain(
+        vk::GraphicsPipelineCreateInfo{
+            .stageCount = static_cast<uint32_t>(std::size(shader_stages)),
+            .pStages = std::data(shader_stages),
+            .pVertexInputState = &vertex_input_state_create_info,
+            .pInputAssemblyState = &input_assembly_state_create_info,
+            .pTessellationState = nullptr,
+            .pViewportState = &viewport_state_create_info,
+            .pRasterizationState = &rasterization_state_create_info,
+            .pMultisampleState = &multisample_state_create_info,
+            .pDepthStencilState = nullptr,
+            .pColorBlendState = &color_blend_state_create_info,
+            .pDynamicState = &dynamic_state_create_info,
+            .layout = m_pipeline_layout,
+        },
+        pipeline_rendering_create_info()
+    );
+    m_graphics_pipeline = vk::raii::Pipeline(m_vk_ctx.device, nullptr, create_info.get());
 }
 
 vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() const {
@@ -270,12 +288,10 @@ vk::raii::ShaderModule Application::create_shader_module(std::string shader) con
     if (!code) {
         throw std::runtime_error("cannot read \"" + string_from(spirv_path) + '"');
     }
-
     auto const create_info = vk::ShaderModuleCreateInfo{
         .codeSize = std::size(*code),
         .pCode = reinterpret_cast<uint32_t const*>(std::data(*code)),
     };
-
     return vk::raii::ShaderModule(m_vk_ctx.device, create_info);
 }
 

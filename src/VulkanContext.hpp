@@ -9,11 +9,15 @@
 
 namespace vp {
 
+using PhysicalDeviceFeaturesChain = vk::StructureChain<vk::PhysicalDeviceFeatures2,
+    vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features>;
+
 struct VulkanContext {
     static constexpr auto API_VERSION = vk::ApiVersion13;
 
     VulkanContext(std::nullptr_t);
-    VulkanContext(Window const& window, std::span<char const* const> required_device_extensions);
+    VulkanContext(Window const& window, std::span<char const* const> required_device_extensions,
+        PhysicalDeviceFeaturesChain const& required_features);
     VulkanContext(VulkanContext const& other) = delete;
     VulkanContext(VulkanContext&& other) = default;
 
@@ -28,11 +32,13 @@ struct VulkanContext {
     vk::raii::SurfaceKHR surface = vk::raii::SurfaceKHR(nullptr);
 
     vk::raii::PhysicalDevice physical_device = vk::raii::PhysicalDevice(nullptr);
-    uint32_t graphics_queue_family_index;
-    uint32_t present_queue_family_index;
+    uint32_t graphics_queue_family_index = ~0u;
+    uint32_t present_queue_family_index = ~0u;
+    uint32_t compute_queue_family_index = ~0u;
     vk::raii::Device device = vk::raii::Device(nullptr);
     vk::raii::Queue graphics_queue = vk::raii::Queue(nullptr);
     vk::raii::Queue present_queue = vk::raii::Queue(nullptr);
+    vk::raii::Queue compute_queue = vk::raii::Queue(nullptr);
 
     VmaRaiiAllocator allocator = VmaRaiiAllocator(nullptr);
 };

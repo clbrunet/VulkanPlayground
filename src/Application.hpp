@@ -68,9 +68,6 @@ private:
     void update_hosek_wilkie_sky_rendering_parameters();
 
 private:
-    static constexpr std::array<char const*, 1u> DEVICE_REQUIRED_EXTENSIONS = std::to_array({
-        vk::KHRSwapchainExtensionName,
-    });
     static constexpr auto MAX_FRAMES_IN_FLIGHT = 2u;
 
     Window m_window = Window("Vulkan Playground", glm::uvec2(16u, 9u) * 80u);

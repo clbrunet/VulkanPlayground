@@ -43,6 +43,7 @@ VmaRaiiBuffer::VmaRaiiBuffer(VmaAllocator const allocator, vk::DeviceSize const 
     auto const create_info = vk::BufferCreateInfo{
         .size = size,
         .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive,
     };
     auto const allocation_create_info = VmaAllocationCreateInfo{
         .flags = allocation_flags,
@@ -166,23 +167,23 @@ void transition_image_layout(vk::CommandBuffer const command_buffer, vk::Image c
     };
     if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
         memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
-        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         memory_barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
     } else if (old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
         memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
         memory_barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
         memory_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
     } else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eColorAttachmentOptimal) {
-        memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
-        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         memory_barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
     } else if (old_layout == vk::ImageLayout::eColorAttachmentOptimal && new_layout == vk::ImageLayout::ePresentSrcKHR) {
         memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eNone;
         memory_barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+        memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         memory_barrier.dstAccessMask = vk::AccessFlagBits2::eNone;
     } else {
         assert(false && "unsupported image layout transition");

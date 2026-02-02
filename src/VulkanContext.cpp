@@ -113,12 +113,15 @@ static QueueFamilyIndices get_queue_family_indices(vk::PhysicalDevice const phys
         };
     }
     for (auto const graphics_and_present_index : graphics_and_present_indices) {
-        if (std::ranges::find(compute_indices, graphics_and_present_index) == std::end(compute_indices)) {
+        auto const compute_index = std::ranges::find_if(compute_indices, [=](uint32_t const compute_index) {
+            return compute_index != graphics_and_present_index;
+        });
+        if (compute_index != std::end(compute_indices)) {
             // Best case : same index for graphics/present and a separate compute queue
             return QueueFamilyIndices{
                 .graphics = graphics_and_present_index,
                 .present = graphics_and_present_index,
-                .compute = compute_indices[0],
+                .compute = *compute_index,
             };
         }
     }

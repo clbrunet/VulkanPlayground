@@ -12,7 +12,6 @@
 #include <glm/glm.hpp>
 
 #include <vector>
-#include <array>
 #include <cstdint>
 #include <future>
 
@@ -22,7 +21,7 @@ class Application {
 public:
     Application();
     Application(Application const&) = delete;
-    Application(Application&& other) = delete;
+    Application(Application&& other) = default;
 
     ~Application();
 
@@ -76,7 +75,7 @@ private:
     VulkanContext m_vk_ctx = VulkanContext(nullptr);
     bool m_has_immediate_present_mode = false;
     bool m_use_v_sync = true;
-    Swapchain m_swapchain = Swapchain(m_vk_ctx);
+    Swapchain m_swapchain = Swapchain(nullptr);
 
     vk::raii::PipelineLayout m_pipeline_layout = vk::raii::PipelineLayout(nullptr);
     vk::raii::Pipeline m_graphics_pipeline = vk::raii::Pipeline(nullptr);

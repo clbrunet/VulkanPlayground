@@ -1,7 +1,6 @@
 #include "VulkanContext.hpp"
 
 #include <iostream>
-#include <set>
 
 namespace vp {
 
@@ -83,71 +82,20 @@ static bool has_device_extension(vk::PhysicalDevice physical_device, std::string
     });
 }
 
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphics;
-    std::optional<uint32_t> present;
-    std::optional<uint32_t> compute;
-};
-
-static QueueFamilyIndices get_queue_family_indices(vk::PhysicalDevice const physical_device, vk::SurfaceKHR const surface) {
+static std::optional<uint32_t> get_general_queue_family_index(vk::PhysicalDevice const physical_device, vk::SurfaceKHR const surface) {
     auto const queue_family_properties = physical_device.getQueueFamilyProperties();
-    auto graphics_and_present_indices = std::vector<uint32_t>();
-    graphics_and_present_indices.reserve(std::size(queue_family_properties));
-    auto compute_indices = std::vector<uint32_t>();
-    compute_indices.reserve(std::size(queue_family_properties));
     auto queue_family_index = 0u;
     for (auto const& queue_family_property : physical_device.getQueueFamilyProperties()) {
+        // A queue family with graphics + compute + presentation support is not guaranteed by the Vulkan spec, but
+        // according to Sascha Willems' hardware database, it is common enough that it's not a concern
         if (queue_family_property.queueFlags & vk::QueueFlagBits::eGraphics
+            && queue_family_property.queueFlags & vk::QueueFlagBits::eCompute
             && physical_device.getSurfaceSupportKHR(queue_family_index, surface)) {
-            graphics_and_present_indices.emplace_back(queue_family_index);
-        }
-        if (queue_family_property.queueFlags & vk::QueueFlagBits::eCompute) {
-            compute_indices.emplace_back(queue_family_index);
+            return queue_family_index;
         }
         queue_family_index += 1u;
     }
-    if (!std::empty(graphics_and_present_indices) && std::empty(compute_indices)) {
-        return QueueFamilyIndices{
-            .graphics = graphics_and_present_indices[0],
-            .present = graphics_and_present_indices[0],
-        };
-    }
-    for (auto const graphics_and_present_index : graphics_and_present_indices) {
-        auto const compute_index = std::ranges::find_if(compute_indices, [=](uint32_t const compute_index) {
-            return compute_index != graphics_and_present_index;
-        });
-        if (compute_index != std::end(compute_indices)) {
-            // Best case : same index for graphics/present and a separate compute queue
-            return QueueFamilyIndices{
-                .graphics = graphics_and_present_index,
-                .present = graphics_and_present_index,
-                .compute = *compute_index,
-            };
-        }
-    }
-    if (!std::empty(graphics_and_present_indices)) {
-        // Same queue index for all
-        return QueueFamilyIndices{
-            .graphics = graphics_and_present_indices[0],
-            .present = graphics_and_present_indices[0],
-            .compute = compute_indices[0],
-        };
-    }
-    auto indices = QueueFamilyIndices{};
-    queue_family_index = 0u;
-    for (auto const& queue_family_property : physical_device.getQueueFamilyProperties()) {
-        if (queue_family_property.queueFlags & vk::QueueFlagBits::eGraphics) {
-            indices.graphics = queue_family_index;
-        }
-        if (physical_device.getSurfaceSupportKHR(queue_family_index, surface)) {
-            indices.present = queue_family_index;
-        }
-        if (queue_family_property.queueFlags & vk::QueueFlagBits::eCompute) {
-            indices.compute = queue_family_index;
-        }
-        queue_family_index += 1u;
-    }
-    return indices;
+    return std::nullopt;
 }
 
 template<typename PhysicalDeviceFeatures>
@@ -181,8 +129,7 @@ static bool has_device_features(auto const& available_features_chain, auto const
 
 static uint32_t get_physical_device_score(vk::PhysicalDevice const physical_device, vk::SurfaceKHR const surface,
     std::span<char const* const> const required_extensions, PhysicalDeviceFeaturesChain const& required_features) {
-    auto const indices = get_queue_family_indices(physical_device, surface);
-    if (!indices.graphics.has_value() || !indices.present.has_value() || !indices.compute.has_value()) {
+    if (!get_general_queue_family_index(physical_device, surface).has_value()) {
         return 0u;
     }
     auto const has_required_extensions = std::ranges::all_of(required_extensions, [&](char const* const extension_name) {
@@ -223,29 +170,19 @@ static vk::raii::PhysicalDevice select_physical_device(vk::raii::Instance const&
     return selected_physical_device;
 }
 
-static vk::raii::Device create_device(vk::raii::PhysicalDevice const& physical_device, QueueFamilyIndices const& queue_family_indices,
+static vk::raii::Device create_device(vk::raii::PhysicalDevice const& physical_device, uint32_t const general_queue_family_index,
     std::span<char const* const> const required_extensions, PhysicalDeviceFeaturesChain const& required_features) {
-    auto const unique_queue_family_indices = std::set<uint32_t>({
-        queue_family_indices.graphics.value(),
-        queue_family_indices.present.value(),
-        queue_family_indices.compute.value(),
-    });
     auto const queue_priority = 1.f;
-    auto queue_create_infos = std::vector<vk::DeviceQueueCreateInfo>();
-    std::ranges::transform(unique_queue_family_indices, std::back_inserter(queue_create_infos),
-        [&queue_priority](uint32_t const queue_family_index) {
-            return vk::DeviceQueueCreateInfo{
-                .queueFamilyIndex = queue_family_index,
-                .queueCount = 1u,
-                .pQueuePriorities = &queue_priority,
-            };
-        }
-    );
+    auto const queue_create_info = vk::DeviceQueueCreateInfo{
+        .queueFamilyIndex = general_queue_family_index,
+        .queueCount = 1u,
+        .pQueuePriorities = &queue_priority,
+    };
 
     auto const create_info = vk::StructureChain(
         vk::DeviceCreateInfo{
-            .queueCreateInfoCount = static_cast<uint32_t>(std::size(queue_create_infos)),
-            .pQueueCreateInfos = std::data(queue_create_infos),
+            .queueCreateInfoCount = 1u,
+            .pQueueCreateInfos = &queue_create_info,
             .enabledExtensionCount = static_cast<uint32_t>(std::size(required_extensions)),
             .ppEnabledExtensionNames = std::data(required_extensions),
         },
@@ -272,14 +209,9 @@ VulkanContext::VulkanContext(Window const& window, std::span<char const* const> 
     surface = vk::raii::SurfaceKHR(instance, window.create_surface(*instance));
 
     physical_device = select_physical_device(instance, surface, required_device_extensions, required_features);
-    auto const queue_family_indices = get_queue_family_indices(physical_device, surface);
-    graphics_queue_family_index = queue_family_indices.graphics.value();
-    present_queue_family_index = queue_family_indices.present.value();
-    compute_queue_family_index = queue_family_indices.compute.value();
-    device = create_device(physical_device, queue_family_indices, required_device_extensions, required_features);
-    graphics_queue = device.getQueue(graphics_queue_family_index, 0u);
-    present_queue = device.getQueue(present_queue_family_index, 0u);
-    compute_queue = device.getQueue(compute_queue_family_index, 0u);
+    general_queue_family_index = get_general_queue_family_index(physical_device, surface).value();
+    device = create_device(physical_device, general_queue_family_index, required_device_extensions, required_features);
+    general_queue = device.getQueue(general_queue_family_index, 0u);
 
     allocator = VmaRaiiAllocator(VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT, physical_device, device, instance, VulkanContext::API_VERSION);
 }

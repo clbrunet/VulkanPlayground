@@ -6,24 +6,25 @@
 
 namespace vp {
 
-Swapchain::Swapchain(VulkanContext const& vk_ctx)
-    : m_vk_ctx{ vk_ctx } {
+Swapchain::Swapchain(std::nullptr_t) {
 }
 
 Swapchain::~Swapchain() {
-    if (*m_vk_ctx.device) {
-        m_vk_ctx.device.waitIdle();
+    if (m_device) {
+        m_device->waitIdle();
     }
 }
 
-void Swapchain::recreate(vk::Extent2D const extent, vk::PresentModeKHR const present_mode) {
-    m_vk_ctx.device.waitIdle();
+void Swapchain::recreate(VulkanContext const& vk_ctx, vk::Extent2D extent, vk::PresentModeKHR present_mode) {
+    m_device = &vk_ctx.device;
+    m_queue = vk_ctx.general_queue;
+    m_device->waitIdle();
     m_render_finished_semaphores.clear();
     m_image_views.clear();
     m_images.clear();
     m_swapchain.clear();
 
-    auto const surface_capabilities = m_vk_ctx.physical_device.getSurfaceCapabilitiesKHR(m_vk_ctx.surface);
+    auto const surface_capabilities = vk_ctx.physical_device.getSurfaceCapabilitiesKHR(vk_ctx.surface);
 
     auto const min_image_count = std::invoke([&] {
         if (surface_capabilities.maxImageCount == 0u) {
@@ -33,8 +34,10 @@ void Swapchain::recreate(vk::Extent2D const extent, vk::PresentModeKHR const pre
     });
 
     auto const surface_format = std::invoke([&] {
-        auto const surface_formats = m_vk_ctx.physical_device.getSurfaceFormatsKHR(m_vk_ctx.surface);
+        auto const surface_formats = vk_ctx.physical_device.getSurfaceFormatsKHR(vk_ctx.surface);
         auto const surface_format_it = std::ranges::find_if(surface_formats, [](vk::SurfaceFormatKHR const device_surface_format) {
+            // return (device_surface_format.format == vk::Format::eR8G8B8A8Unorm || device_surface_format.format == vk::Format::eB8G8R8A8Unorm)
+            //     && device_surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; // Linear format useful for debugging
             return (device_surface_format.format == vk::Format::eR8G8B8A8Srgb || device_surface_format.format == vk::Format::eB8G8R8A8Srgb)
                 && device_surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
         });
@@ -53,46 +56,33 @@ void Swapchain::recreate(vk::Extent2D const extent, vk::PresentModeKHR const pre
         };
     });
 
-    auto const [sharing_mode, queue_family_index_count] = std::invoke([&] {
-        if (*m_vk_ctx.graphics_queue != *m_vk_ctx.present_queue) {
-            return std::tuple(vk::SharingMode::eConcurrent, 2u);
-        }
-        return std::tuple(vk::SharingMode::eExclusive, 0u);
-    });
-    auto const queue_family_indices = std::to_array({
-        m_vk_ctx.graphics_queue_family_index,
-        m_vk_ctx.present_queue_family_index,
-    });
-
     auto const create_info = vk::SwapchainCreateInfoKHR{
-        .surface = m_vk_ctx.surface,
+        .surface = vk_ctx.surface,
         .minImageCount = min_image_count,
         .imageFormat = surface_format.format,
         .imageColorSpace = surface_format.colorSpace,
         .imageExtent = image_extent,
         .imageArrayLayers = 1u,
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-        .imageSharingMode = sharing_mode,
-        .queueFamilyIndexCount = queue_family_index_count,
-        .pQueueFamilyIndices = std::data(queue_family_indices),
+        .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
         .presentMode = present_mode,
         .clipped = vk::True,
         .oldSwapchain = vk::SwapchainKHR{},
     };
-    m_swapchain = vk::raii::SwapchainKHR(m_vk_ctx.device, create_info);
+    m_swapchain = vk::raii::SwapchainKHR(*m_device, create_info);
     m_format = surface_format.format;
     m_extent = image_extent;
 
     m_images = m_swapchain.getImages();
     std::ranges::transform(m_images, std::back_inserter(m_image_views), [&](vk::Image const image) {
-        return create_image_view(m_vk_ctx.device, image, m_format);
+        return create_image_view(*m_device, image, m_format);
     });
 
     m_render_finished_semaphores.reserve(std::size(m_images));
     for (auto i = 0u; i < std::size(m_images); ++i) {
-        m_render_finished_semaphores.emplace_back(m_vk_ctx.device, vk::SemaphoreCreateInfo{});
+        m_render_finished_semaphores.emplace_back(*m_device, vk::SemaphoreCreateInfo{});
     }
 }
 
@@ -109,6 +99,8 @@ uint32_t Swapchain::image_count() const {
 }
 
 std::optional<Swapchain::AcquiredImage> Swapchain::acquire_next_image(vk::Semaphore const semaphore) {
+    assert(**m_device);
+    assert(m_queue);
     try {
         auto const index = m_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(), semaphore).second;
         return AcquiredImage{
@@ -124,6 +116,8 @@ std::optional<Swapchain::AcquiredImage> Swapchain::acquire_next_image(vk::Semaph
 }
 
 bool Swapchain::queue_present(AcquiredImage const& acquired_image) {
+    assert(**m_device);
+    assert(m_queue);
     try {
         auto const present_info = vk::PresentInfoKHR{
             .waitSemaphoreCount = 1u,
@@ -132,7 +126,7 @@ bool Swapchain::queue_present(AcquiredImage const& acquired_image) {
             .pSwapchains = &*m_swapchain,
             .pImageIndices = &acquired_image.index,
         };
-        auto const result = m_vk_ctx.present_queue.presentKHR(present_info);
+        auto const result = m_queue.presentKHR(present_info);
         if (result == vk::Result::eSuboptimalKHR) {
             return false;
         }

@@ -174,7 +174,7 @@ void Application::init_vulkan() {
 
 void Application::recreate_swapchain() {
     auto const framebuffer_dimensions = m_window.wait_for_valid_framebuffer();
-    m_swapchain.recreate(vk::Extent2D{
+    m_swapchain.recreate(m_vk_ctx, vk::Extent2D{
         .width = static_cast<uint32_t>(framebuffer_dimensions.x),
         .height = static_cast<uint32_t>(framebuffer_dimensions.y),
     }, m_use_v_sync ? vk::PresentModeKHR::eFifo : vk::PresentModeKHR::eImmediate);
@@ -296,20 +296,18 @@ vk::raii::ShaderModule Application::create_shader_module(std::string shader) con
 }
 
 void Application::create_command_pool() {
-    auto const create_info = vk::CommandPoolCreateInfo{
+    m_command_pool = vk::raii::CommandPool(m_vk_ctx.device, vk::CommandPoolCreateInfo{
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = m_vk_ctx.graphics_queue_family_index,
-    };
-    m_command_pool = vk::raii::CommandPool(m_vk_ctx.device, create_info);
+        .queueFamilyIndex = m_vk_ctx.general_queue_family_index,
+    });
 }
 
 void Application::create_command_buffers() {
-    auto const allocate_info = vk::CommandBufferAllocateInfo{
+    m_command_buffers = vk::raii::CommandBuffers(m_vk_ctx.device, vk::CommandBufferAllocateInfo{
         .commandPool = m_command_pool,
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-    };
-    m_command_buffers = vk::raii::CommandBuffers(m_vk_ctx.device, allocate_info);
+    });
 }
 
 void Application::create_sync_objects() {
@@ -326,7 +324,7 @@ void Application::create_sync_objects() {
 
 void Application::create_hosek_wilkie_sky_rendering_parameters_buffer() {
     m_hosek_wilkie_sky_rendering_parameters_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, sizeof(HosekWilkieSkyRenderingParameters),
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress, 0u, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
     m_hosek_wilkie_sky_rendering_parameters_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
         .buffer = m_hosek_wilkie_sky_rendering_parameters_buffer,
     });
@@ -339,8 +337,8 @@ void Application::init_imgui() {
         .Instance = *m_vk_ctx.instance,
         .PhysicalDevice = *m_vk_ctx.physical_device,
         .Device = *m_vk_ctx.device,
-        .QueueFamily = m_vk_ctx.graphics_queue_family_index,
-        .Queue = *m_vk_ctx.graphics_queue,
+        .QueueFamily = m_vk_ctx.general_queue_family_index,
+        .Queue = *m_vk_ctx.general_queue,
         .MinImageCount = m_swapchain.image_count(),
         .ImageCount = m_swapchain.image_count(),
         .DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE + 1u,
@@ -456,14 +454,12 @@ void Application::draw_frame() {
         .semaphore = image_available_semaphore,
         .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     };
-    auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{
-        .commandBuffer = command_buffer,
-    };
+    auto const command_buffer_submit_info = vk::CommandBufferSubmitInfo{ .commandBuffer = command_buffer };
     auto const render_finished_semaphore_submit_info = vk::SemaphoreSubmitInfo{
         .semaphore = acquired_image.render_finished_semaphore,
         .stageMask = vk::PipelineStageFlagBits2::eAllCommands,
     };
-    m_vk_ctx.graphics_queue.submit2(vk::SubmitInfo2{
+    m_vk_ctx.general_queue.submit2(vk::SubmitInfo2{
         .waitSemaphoreInfoCount = 1u,
         .pWaitSemaphoreInfos = &image_available_semaphore_submit_info,
         .commandBufferInfoCount = 1u,
@@ -482,7 +478,7 @@ void Application::draw_frame() {
 }
 
 void Application::record_command_buffer(vk::CommandBuffer const command_buffer, Swapchain::AcquiredImage const& acquired_image) {
-    command_buffer.begin(vk::CommandBufferBeginInfo{});
+    command_buffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
     transition_image_layout(command_buffer, acquired_image.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 
@@ -503,20 +499,19 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     };
     command_buffer.beginRendering(rendering_info);
 
-    command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
-
-    auto const viewport = vk::Viewport{
-        .x = 0.f,
-        .y = 0.f,
-        .width = static_cast<float>(rendering_info.renderArea.extent.width),
-        .height = static_cast<float>(rendering_info.renderArea.extent.height),
-        .minDepth = 0.f,
-        .maxDepth = 1.f,
-    };
-    command_buffer.setViewport(0u, viewport);
-    command_buffer.setScissor(0u, rendering_info.renderArea);
-
     if (m_tree64_depth > 0u) {
+        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
+        auto const viewport = vk::Viewport{
+            .x = 0.f,
+            .y = 0.f,
+            .width = static_cast<float>(rendering_info.renderArea.extent.width),
+            .height = static_cast<float>(rendering_info.renderArea.extent.height),
+            .minDepth = 0.f,
+            .maxDepth = 1.f,
+        };
+        command_buffer.setViewport(0u, viewport);
+        command_buffer.setScissor(0u, rendering_info.renderArea);
+
         auto const push_constants = PushConstants{
             .aspect_ratio = viewport.width / viewport.height,
             .camera_position = m_camera.position(),
@@ -543,14 +538,14 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
 }
 
 void Application::copy_buffer(vk::Buffer const src, vk::Buffer const dst, vk::DeviceSize size) const {
-    one_time_commands(m_vk_ctx.device, m_command_pool, m_vk_ctx.graphics_queue, [=](vk::CommandBuffer const command_buffer) {
+    one_time_commands(m_vk_ctx.device, m_command_pool, m_vk_ctx.general_queue, [=](vk::CommandBuffer const command_buffer) {
         auto const copy_region = vk::BufferCopy{ .size = size };
         command_buffer.copyBuffer(src, dst, copy_region);
     });
 }
 
 void Application::copy_buffer_to_image(vk::Buffer const src, vk::Image const dst, uint32_t const width, uint32_t const height) const {
-    one_time_commands(m_vk_ctx.device, m_command_pool, m_vk_ctx.graphics_queue, [=](vk::CommandBuffer const command_buffer) {
+    one_time_commands(m_vk_ctx.device, m_command_pool, m_vk_ctx.general_queue, [=](vk::CommandBuffer const command_buffer) {
         auto const copy_region = vk::BufferImageCopy{
             .bufferOffset = 0u,
             .bufferRowLength = 0u,
@@ -579,7 +574,7 @@ void Application::create_tree64_buffer(std::span<Tree64Node const> const nodes) 
     m_tree64_nodes_buffer.destroy();
     m_tree64_nodes_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, buffer_size, vk::BufferUsageFlagBits::eTransferDst
         | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferSrc,
-        0, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+        0u, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
     copy_buffer(staging_buffer, m_tree64_nodes_buffer, buffer_size);
 
     m_tree64_nodes_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{

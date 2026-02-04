@@ -20,6 +20,7 @@ public:
     ~Window();
 
     Window& operator=(Window const& other) = delete;
+    Window& operator=(Window&& other) = delete;
 
     void set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> framebuffer_callback);
 

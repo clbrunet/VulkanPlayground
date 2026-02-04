@@ -32,13 +32,9 @@ struct VulkanContext {
     vk::raii::SurfaceKHR surface = vk::raii::SurfaceKHR(nullptr);
 
     vk::raii::PhysicalDevice physical_device = vk::raii::PhysicalDevice(nullptr);
-    uint32_t graphics_queue_family_index = ~0u;
-    uint32_t present_queue_family_index = ~0u;
-    uint32_t compute_queue_family_index = ~0u;
     vk::raii::Device device = vk::raii::Device(nullptr);
-    vk::raii::Queue graphics_queue = vk::raii::Queue(nullptr);
-    vk::raii::Queue present_queue = vk::raii::Queue(nullptr);
-    vk::raii::Queue compute_queue = vk::raii::Queue(nullptr);
+    uint32_t general_queue_family_index = ~0u;
+    vk::raii::Queue general_queue = vk::raii::Queue(nullptr);
 
     VmaRaiiAllocator allocator = VmaRaiiAllocator(nullptr);
 };

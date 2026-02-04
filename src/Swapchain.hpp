@@ -8,16 +8,16 @@ namespace vp {
 
 class Swapchain {
 public:
-    Swapchain(VulkanContext const& vk_ctx);
+    Swapchain(std::nullptr_t);
     Swapchain(Swapchain const& other) = delete;
     Swapchain(Swapchain&& other) = default;
 
     ~Swapchain();
 
     Swapchain& operator=(Swapchain const& other) = delete;
-    Swapchain& operator=(Swapchain&& other) = delete;
+    Swapchain& operator=(Swapchain&& other) = default;
 
-    void recreate(vk::Extent2D extent, vk::PresentModeKHR present_mode);
+    void recreate(VulkanContext const& vk_ctx, vk::Extent2D extent, vk::PresentModeKHR present_mode);
 
     [[nodiscard]] vk::Format const& format() const;
     [[nodiscard]] vk::Extent2D const& extent() const;
@@ -34,7 +34,8 @@ public:
     [[nodiscard]] bool queue_present(AcquiredImage const& acquired_image);
 
 private:
-    VulkanContext const& m_vk_ctx;
+    vk::raii::Device const* m_device = nullptr;
+    vk::Queue m_queue;
     vk::raii::SwapchainKHR m_swapchain = vk::raii::SwapchainKHR(nullptr);
     vk::Format m_format;
     vk::Extent2D m_extent;

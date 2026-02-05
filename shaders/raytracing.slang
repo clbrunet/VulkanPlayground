@@ -138,7 +138,7 @@ struct Tree64 {
                 return Hit(world_distance, position, normal);
             }
             // Advance to neighbor
-            current_distances = (child_min - mirrored_ray_origin) * ray.direction_inverse;
+            current_distances = max((child_min - mirrored_ray_origin) * ray.direction_inverse, float3(current_distance));
             current_distance = min3(current_distances.x, current_distances.z, current_distances.y);
             if (current_distance >= max_distance) {
                 break;

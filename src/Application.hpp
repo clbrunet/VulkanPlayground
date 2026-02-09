@@ -17,6 +17,18 @@
 
 namespace vp {
 
+#pragma pack(push, 1)
+struct GpuTree64 {
+    vk::DeviceAddress nodes_device_address = 0u;
+    uint32_t depth = 0u;
+};
+
+struct GpuBeamOptimBuffer {
+    glm::uvec2 dimensions = glm::uvec2(0u);
+    vk::DeviceAddress distances_device_address = 0u;
+};
+#pragma pack(pop)
+
 class Application {
 public:
     Application();
@@ -39,8 +51,10 @@ private:
 
     void recreate_swapchain();
 
+    void create_pipeline_layout();
     void create_graphics_pipeline();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info() const;
+    void create_compute_pipeline();
     vk::raii::ShaderModule create_shader_module(std::string shader) const;
 
     void create_command_pool();
@@ -56,7 +70,7 @@ private:
     void update_tree64_buffer();
 
     void draw_frame();
-    void record_command_buffer(vk::CommandBuffer command_buffer, Swapchain::AcquiredImage const& acquired_image);
+    void record_frame(vk::CommandBuffer command_buffer, Swapchain::AcquiredImage const& acquired_image);
 
     void copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) const;
     void copy_buffer_to_image(vk::Buffer src, vk::Image dst, uint32_t width, uint32_t height) const;
@@ -79,30 +93,36 @@ private:
 
     vk::raii::PipelineLayout m_pipeline_layout = vk::raii::PipelineLayout(nullptr);
     vk::raii::Pipeline m_graphics_pipeline = vk::raii::Pipeline(nullptr);
+    vk::raii::Pipeline m_compute_pipeline = vk::raii::Pipeline(nullptr);
 
     vk::raii::CommandPool m_command_pool = vk::raii::CommandPool(nullptr);
     vk::raii::CommandBuffers m_command_buffers = vk::raii::CommandBuffers(nullptr);
 
     std::vector<vk::raii::Semaphore> m_image_available_semaphores;
     std::vector<vk::raii::Fence> m_in_flight_fences;
+    // TODO: maybe use a timeline semaphore for in flight frames handling
+    uint8_t m_current_in_flight_frame_index = 0u;
 
     std::unique_ptr<ImGuiWrapper> m_imgui;
 
     std::filesystem::path m_model_path_to_import;
     uint32_t m_max_side_voxel_count_to_import = 1024;
     std::future<std::optional<ContiguousTree64>> m_model_import_future;
-    uint8_t m_tree64_depth = 0u;
+
     VmaRaiiBuffer m_tree64_nodes_buffer = VmaRaiiBuffer(nullptr);
-    vk::DeviceAddress m_tree64_nodes_device_address = 0u;
+    GpuTree64 m_gpu_tree64;
+
+    VmaRaiiBuffer m_beam_optim_distances_buffer = VmaRaiiBuffer(nullptr);
+    GpuBeamOptimBuffer m_gpu_beam_optim_buffer;
 
     float m_sun_rotation = glm::radians(0.f);
     float m_sun_elevation = glm::radians(70.f);
+
     float m_hosek_wilkie_sky_turbidity = 4.f;
     float m_hosek_wilkie_sky_albedo = 0.3f;
+
     VmaRaiiBuffer m_hosek_wilkie_sky_rendering_parameters_buffer = VmaRaiiBuffer(nullptr);
     vk::DeviceAddress m_hosek_wilkie_sky_rendering_parameters_device_address = 0u;
-
-    uint8_t m_current_in_flight_frame_index = 0u;
 
     Camera m_camera = Camera(glm::vec3(2000.f, 450.f, 4300.f), glm::radians(glm::vec2(0.f, 90.f)));
 };

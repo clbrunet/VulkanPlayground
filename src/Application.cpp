@@ -6,6 +6,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/integer.hpp>
 #include <glm/ext/scalar_common.hpp>
+#include <glm/gtx/component_wise.hpp>
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <ArHosekSkyModel.h>
@@ -22,17 +23,14 @@
 namespace vp {
 
 #pragma pack(push, 1)
-struct GpuTree64 {
-    vk::DeviceAddress tree64_nodes_device_address;
-    uint32_t depth;
-};
 struct PushConstants {
-    float aspect_ratio;
     glm::vec3 camera_position;
-    glm::mat3 camera_rotation;
     glm::vec3 to_sun_direction;
     vk::DeviceAddress hosek_wilkie_sky_rendering_parameters_device_address;
+    glm::vec2 half_attachment_dimensions;
+    GpuBeamOptimBuffer beam_optim_buffer;
     GpuTree64 tree64;
+    glm::mat3 camera_rotation;
 };
 
 struct HosekWilkieSkyRenderingParameters {
@@ -162,7 +160,9 @@ void Application::init_vulkan() {
 
     recreate_swapchain();
 
+    create_pipeline_layout();
     create_graphics_pipeline();
+    create_compute_pipeline();
 
     create_command_pool();
     create_command_buffers();
@@ -175,10 +175,35 @@ void Application::init_vulkan() {
 void Application::recreate_swapchain() {
     auto const framebuffer_dimensions = m_window.wait_for_valid_framebuffer();
     m_swapchain.recreate(m_vk_ctx, vk::Extent2D{
-        .width = static_cast<uint32_t>(framebuffer_dimensions.x),
-        .height = static_cast<uint32_t>(framebuffer_dimensions.y),
+        .width = framebuffer_dimensions.x,
+        .height = framebuffer_dimensions.y,
     }, m_use_v_sync ? vk::PresentModeKHR::eFifo : vk::PresentModeKHR::eImmediate);
+
+    auto const extent = glm::uvec2(m_swapchain.extent().width, m_swapchain.extent().height);
+    m_gpu_beam_optim_buffer.dimensions = extent / 2u + 2u;
+    auto const beam_optim_buffer_resolution = glm::compMul(m_gpu_beam_optim_buffer.dimensions);
+    m_beam_optim_distances_buffer = VmaRaiiBuffer(m_vk_ctx.allocator, beam_optim_buffer_resolution * sizeof(float),
+        vk::BufferUsageFlagBits::eShaderDeviceAddress, 0u, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    m_gpu_beam_optim_buffer.distances_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
+        .buffer = m_beam_optim_distances_buffer,
+    });
+
     m_should_recreate_swapchain = false;
+}
+
+void Application::create_pipeline_layout() {
+    auto const push_constants_ranges = std::array{
+        vk::PushConstantRange{
+            .stageFlags = vk::ShaderStageFlagBits::eCompute
+                | vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            .size = sizeof(PushConstants)
+        },
+    };
+    auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
+        .pushConstantRangeCount = static_cast<uint32_t>(std::size(push_constants_ranges)),
+        .pPushConstantRanges = std::data(push_constants_ranges),
+    };
+    m_pipeline_layout = vk::raii::PipelineLayout(m_vk_ctx.device, pipeline_layout_create_info);
 }
 
 void Application::create_graphics_pipeline() {
@@ -243,19 +268,7 @@ void Application::create_graphics_pipeline() {
         .pDynamicStates = std::data(dynamic_states),
     };
 
-    auto const push_constants_ranges = std::array{
-        vk::PushConstantRange{
-            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            .size = sizeof(PushConstants)
-        },
-    };
-    auto const pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
-        .pushConstantRangeCount = static_cast<uint32_t>(std::size(push_constants_ranges)),
-        .pPushConstantRanges = std::data(push_constants_ranges),
-    };
-    m_pipeline_layout = vk::raii::PipelineLayout(m_vk_ctx.device, pipeline_layout_create_info);
-
-    auto const create_info = vk::StructureChain(
+    m_graphics_pipeline = vk::raii::Pipeline(m_vk_ctx.device, nullptr, vk::StructureChain(
         vk::GraphicsPipelineCreateInfo{
             .stageCount = static_cast<uint32_t>(std::size(shader_stages)),
             .pStages = std::data(shader_stages),
@@ -271,8 +284,7 @@ void Application::create_graphics_pipeline() {
             .layout = m_pipeline_layout,
         },
         pipeline_rendering_create_info()
-    );
-    m_graphics_pipeline = vk::raii::Pipeline(m_vk_ctx.device, nullptr, create_info.get());
+    ).get());
 }
 
 vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() const {
@@ -282,17 +294,28 @@ vk::PipelineRenderingCreateInfo Application::pipeline_rendering_create_info() co
     };
 }
 
+void Application::create_compute_pipeline() {
+    auto const shader_module = create_shader_module("raytracing.spv");
+    m_compute_pipeline = vk::raii::Pipeline(m_vk_ctx.device, nullptr, vk::ComputePipelineCreateInfo{
+        .stage = vk::PipelineShaderStageCreateInfo{
+            .stage = vk::ShaderStageFlagBits::eCompute,
+            .module = shader_module,
+            .pName = "main",
+        },
+        .layout = m_pipeline_layout,
+    });
+}
+
 vk::raii::ShaderModule Application::create_shader_module(std::string shader) const {
     auto const spirv_path = get_spirv_shader_path(std::move(shader));
     auto const code = read_binary_file(spirv_path);
     if (!code) {
         throw std::runtime_error("cannot read \"" + string_from(spirv_path) + '"');
     }
-    auto const create_info = vk::ShaderModuleCreateInfo{
+    return vk::raii::ShaderModule(m_vk_ctx.device, vk::ShaderModuleCreateInfo{
         .codeSize = std::size(*code),
         .pCode = reinterpret_cast<uint32_t const*>(std::data(*code)),
-    };
-    return vk::raii::ShaderModule(m_vk_ctx.device, create_info);
+    });
 }
 
 void Application::create_command_pool() {
@@ -362,7 +385,6 @@ void Application::update_gui() {
             m_should_recreate_swapchain = true;
         }
     }
-
     ImGui::Text("Hold right click to move/rotate the camera");
     ImGui::Text("Speed is adjustable using mouse wheel and Shift/Alt");
     auto position = m_camera.position();
@@ -402,7 +424,7 @@ void Application::update_gui() {
         ImGui::ProgressBar(-1.f * static_cast<float>(ImGui::GetTime()), ImVec2(0.0f, 0.0f), "Importing...");
     } else if (ImGui::Button("Import")) {
         start_model_import();
-    } else if (m_tree64_nodes_device_address != 0u && ImGui::Button("Save displayed acceleration structure")) {
+    } else if (m_gpu_tree64.nodes_device_address != 0u && ImGui::Button("Save displayed acceleration structure")) {
         auto const filters = std::array{ nfdu8filteritem_t{ "Tree64", "t64" } };
         auto const path = m_window.pick_saving_path(filters, get_asset_path("models"));
         if (path.has_value()) {
@@ -426,7 +448,7 @@ void Application::update_tree64_buffer() {
         && m_model_import_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         auto contiguous_tree64 = m_model_import_future.get();
         if (contiguous_tree64.has_value()) {
-            m_tree64_depth = contiguous_tree64->depth;
+            m_gpu_tree64.depth = contiguous_tree64->depth;
             create_tree64_buffer(contiguous_tree64->nodes);
         }
     }
@@ -443,12 +465,11 @@ void Application::draw_frame() {
         return;
     }
     auto const& acquired_image = acquired_image_opt.value();
-
     m_vk_ctx.device.resetFences(*in_flight_fence);
 
     auto const& command_buffer = m_command_buffers[m_current_in_flight_frame_index];
     command_buffer.reset();
-    record_command_buffer(command_buffer, acquired_image);
+    record_frame(command_buffer, acquired_image);
 
     auto const image_available_semaphore_submit_info = vk::SemaphoreSubmitInfo{
         .semaphore = image_available_semaphore,
@@ -477,8 +498,39 @@ void Application::draw_frame() {
     m_current_in_flight_frame_index = (m_current_in_flight_frame_index + 1u) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Application::record_command_buffer(vk::CommandBuffer const command_buffer, Swapchain::AcquiredImage const& acquired_image) {
+void Application::record_frame(vk::CommandBuffer const command_buffer, Swapchain::AcquiredImage const& acquired_image) {
     command_buffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+
+    auto const swapchain_extent = m_swapchain.extent();
+    auto const swapchain_dimensions = glm::uvec2(swapchain_extent.width, swapchain_extent.height);
+    if (m_gpu_tree64.depth > 0u) {
+        auto const push_constants = PushConstants{
+            .camera_position = m_camera.position(),
+            .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
+            .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
+            .half_attachment_dimensions = glm::vec2(swapchain_dimensions) / 2.f,
+            .beam_optim_buffer = m_gpu_beam_optim_buffer,
+            .tree64 = m_gpu_tree64,
+            .camera_rotation = m_camera.rotation(),
+        };
+        command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eCompute
+            | vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
+
+        auto const group_count = divide_ceil(divide_ceil(swapchain_dimensions, 2u) + 1u, 8u);
+        command_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, m_compute_pipeline);
+        command_buffer.dispatch(group_count.x, group_count.y, 1u);
+        auto const memory_barrier = vk::MemoryBarrier2{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead,
+        };
+        command_buffer.pipelineBarrier2(vk::DependencyInfo{
+            .memoryBarrierCount = 1u,
+            .pMemoryBarriers = &memory_barrier,
+        });
+    }
 
     transition_image_layout(command_buffer, acquired_image.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 
@@ -491,7 +543,7 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     auto const rendering_info = vk::RenderingInfo{
         .renderArea = vk::Rect2D{
             .offset = vk::Offset2D{ 0, 0 },
-            .extent = m_swapchain.extent(),
+            .extent = swapchain_extent,
         },
         .layerCount = 1u,
         .colorAttachmentCount = 1u,
@@ -499,32 +551,19 @@ void Application::record_command_buffer(vk::CommandBuffer const command_buffer, 
     };
     command_buffer.beginRendering(rendering_info);
 
-    if (m_tree64_depth > 0u) {
+    if (m_gpu_tree64.depth > 0u) {
         command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
         auto const viewport = vk::Viewport{
             .x = 0.f,
             .y = 0.f,
-            .width = static_cast<float>(rendering_info.renderArea.extent.width),
-            .height = static_cast<float>(rendering_info.renderArea.extent.height),
+            .width = static_cast<float>(swapchain_dimensions.x),
+            .height = static_cast<float>(swapchain_dimensions.y),
             .minDepth = 0.f,
             .maxDepth = 1.f,
         };
         command_buffer.setViewport(0u, viewport);
         command_buffer.setScissor(0u, rendering_info.renderArea);
 
-        auto const push_constants = PushConstants{
-            .aspect_ratio = viewport.width / viewport.height,
-            .camera_position = m_camera.position(),
-            .camera_rotation = m_camera.rotation(),
-            .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
-            .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
-            .tree64 {
-                .tree64_nodes_device_address = m_tree64_nodes_device_address,
-                .depth = m_tree64_depth,
-            },
-        };
-        command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0u, vk::ArrayProxy<PushConstants const>({ push_constants }));
         command_buffer.draw(3u, 1u, 0u, 0u);
     }
 
@@ -577,7 +616,7 @@ void Application::create_tree64_buffer(std::span<Tree64Node const> const nodes) 
         0u, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
     copy_buffer(staging_buffer, m_tree64_nodes_buffer, buffer_size);
 
-    m_tree64_nodes_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
+    m_gpu_tree64.nodes_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
         .buffer = m_tree64_nodes_buffer,
     });
 }
@@ -589,7 +628,7 @@ void Application::save_acceleration_structure(std::filesystem::path const& path)
     copy_buffer(m_tree64_nodes_buffer, dst_buffer, buffer_size);
     auto nodes = std::vector<Tree64Node>(buffer_size / sizeof(Tree64Node));
     dst_buffer.copy_allocation_to_memory(0u, std::span(reinterpret_cast<uint8_t*>(std::data(nodes)), buffer_size));
-    if (!save_t64(path, ContiguousTree64{ .depth = m_tree64_depth, .nodes = std::move(nodes) })) {
+    if (!save_t64(path, ContiguousTree64{ .depth = static_cast<uint8_t>(m_gpu_tree64.depth), .nodes = std::move(nodes) })) {
         std::cerr << "Cannot save acceleration structure to " << string_from(path) << std::endl;
     }
 }

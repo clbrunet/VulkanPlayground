@@ -4,6 +4,8 @@
 #include "vox.hpp"
 #include "voxelizer.hpp"
 
+#include <glm/gtx/component_wise.hpp>
+
 #include <array>
 #include <iostream>
 #include <algorithm>
@@ -29,7 +31,7 @@ std::optional<Tree64> Tree64::voxelize_model(std::filesystem::path const& path, 
 std::optional<Tree64> Tree64::import_vox(std::filesystem::path const& path) {
     std::optional<Tree64> tree64;
     auto const success = ::import_vox(path, [&](glm::uvec3 const& vox_full_size) {
-        auto const max = glm::max(4u, max_component(vox_full_size));
+        auto const max = glm::max(4u, glm::compMax(vox_full_size));
         auto depth = divide_ceil(static_cast<uint8_t>(std::bit_width(max - 1u)), uint8_t{ 2u });
         if (depth > Tree64::MAX_DEPTH) {
             std::cerr << "Vox \"" << string_from(path) << "\" exceeds the max voxel size " << 1u << (MAX_DEPTH * 2u) << std::endl;

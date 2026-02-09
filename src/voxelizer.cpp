@@ -8,6 +8,7 @@
 #include <assimp/scene.h>
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
+#include <glm/gtx/component_wise.hpp>
 
 #include <iostream>
 #include <span>
@@ -99,7 +100,7 @@ bool voxelize_model(std::filesystem::path const& path, uint32_t const side_voxel
         }
     });
     auto const model_size = max - min;
-    auto const scale = static_cast<float>(side_voxel_count) / max_component(model_size);
+    auto const scale = static_cast<float>(side_voxel_count) / glm::compMax(model_size);
 
     auto added_voxels = std::vector<glm::ivec3>();
     for_each_mesh([&](aiMesh const& mesh) {

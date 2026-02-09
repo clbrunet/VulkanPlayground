@@ -8,31 +8,9 @@
 #include <assimp/vector3.h>
 #include <imgui.h>
 
-template<typename T>
-inline constexpr T divide_ceil(T const& a, T const& b) {
-    return T((a + b - T(1)) / b);
-}
-
-template<glm::length_t L, typename T, glm::qualifier Q>
-inline constexpr T min_component(glm::vec<L, T, Q> const& vec) {
-    auto min = vec[0];
-    for (auto i = 1u; i < L; ++i) {
-        if (vec[i] < min) {
-            min = vec[i];
-        }
-    }
-    return min;
-}
-
-template<glm::length_t L, typename T, glm::qualifier Q>
-inline constexpr T max_component(glm::vec<L, T, Q> const& vec) {
-    auto max = vec[0];
-    for (auto i = 1; i < L; ++i) {
-        if (vec[i] > max) {
-            max = vec[i];
-        }
-    }
-    return max;
+template<typename T1, typename T2>
+inline constexpr T1 divide_ceil(T1 const& a, T2 const& b) {
+    return T1((a + b - 1u) / b);
 }
 
 template<typename T>

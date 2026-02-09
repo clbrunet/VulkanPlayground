@@ -2,6 +2,12 @@ uint exp4(const uint exponent) {
     return 1u << (exponent << 1u);
 }
 
+__generic<let N: int>
+vector<uint, N> divide_ceil(const vector<uint, N> a, const uint b)
+{
+    return (a + b - 1u) / b;
+}
+
 struct Ray {
     float3 position;
     float3 direction;
@@ -184,34 +190,99 @@ struct HosekWilkieSkyRenderingParameters {
     }
 };
 
+struct BeamOptimBuffer {
+    uint2 dimensions;
+    float* distances;
+
+    float get_distance_at(const uint2 id) {
+        return distances[id.y * dimensions.x + id.x];
+    }
+
+    void set_distance_at(const uint2 id, const float dist) {
+        distances[id.y * dimensions.x + id.x] = dist;
+    }
+};
+
 struct PushConstants {
-    float aspect_ratio;
     float3 camera_position;
-    float3x3 camera_rotation;
     float3 to_sun_direction;
     HosekWilkieSkyRenderingParameters* hosek_wilkie_sky_rendering_parameters;
+    float2 half_attachment_dimensions;
+    BeamOptimBuffer beam_optim_buffer;
     Tree64 tree64;
+    float3x3 camera_rotation;
 };
 [vk::push_constant]
 PushConstants pc;
 
+static const float HALF_VERTICAL_FOV = radians(75. / 2.);
+static const float RAY_FORWARD = 1. / tan(HALF_VERTICAL_FOV);
+
+[shader("compute")]
+[numthreads(8, 8)]
+void main(const uint2 dispatch_thread_id: SV_DispatchThreadID) {
+    if (any(dispatch_thread_id >= pc.beam_optim_buffer.dimensions)) {
+        return;
+    }
+    let direction = mul(pc.camera_rotation, float3(
+        (float(dispatch_thread_id.x * 2u) - 0.5 - pc.half_attachment_dimensions.x) / pc.half_attachment_dimensions.y,
+        -(float(dispatch_thread_id.y * 2u) - 0.5 - pc.half_attachment_dimensions.y) / pc.half_attachment_dimensions.y,
+        RAY_FORWARD
+    ));
+    let ray = Ray(pc.camera_position, normalize(direction));
+
+    let focal_length = pc.half_attachment_dimensions.y / tan(HALF_VERTICAL_FOV);
+    static const float BEAM_PIXEL_SIZE = 2.;
+    static const float BEAM_PIXELS_DIAGONAL_SIZE = sqrt(2. * pow(BEAM_PIXEL_SIZE, 2.));
+    let max_beam_distance = focal_length / BEAM_PIXELS_DIAGONAL_SIZE - 0.01; // TODO: move to CPU and add comments so CPU-GPU FOV always match 
+
+    let hit = pc.tree64.raycast(ray, max_beam_distance);
+    let dist = hit.hasValue ? hit.value.distance - 0.01 : max_beam_distance;
+    pc.beam_optim_buffer.set_distance_at(dispatch_thread_id, dist);
+}
+
 struct Interpolants {
-    float4 position : SV_Position;
+    float4 position: SV_Position;
     float3 ray_direction;
 };
 
 [shader("vertex")]
-Interpolants main(const uint vertex_id : SV_VertexID) {
+Interpolants main(const uint vertex_id: SV_VertexID) {
     let x = -1. + float((vertex_id & 1u) << 2u);
     let y = -1. + float((vertex_id & 2u) << 1u);
     let position = float4(x, y, 1., 1.);
-    let ray_direction = mul(pc.camera_rotation, float3(x * pc.aspect_ratio, -y, 1.));
+    let aspect_ratio = pc.half_attachment_dimensions.x / pc.half_attachment_dimensions.y;
+    let ray_direction = mul(pc.camera_rotation, float3(x * aspect_ratio, -y, RAY_FORWARD));
     return Interpolants(position, ray_direction);
 }
 
 [shader("fragment")]
-float4 main(const Interpolants input) : SV_Target {
-    let ray = Ray(pc.camera_position, normalize(input.ray_direction));
+float4 main(const Interpolants input): SV_Target {
+    var dist: float;
+    let coords = uint2(input.position.xy);
+    let beam_coords = divide_ceil(coords, 2u);
+    if (coords.x % 2u == 1u && coords.y % 2u == 1u) {
+        dist = pc.beam_optim_buffer.get_distance_at(beam_coords);
+    } else if (coords.x % 2u == 0u && coords.y % 2u == 0u) {
+        dist = min(
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 0u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 0u))),
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 1u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 1u))),
+        );
+    } else if (coords.x % 2u == 0u) {
+        dist = min3(
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords - uint2(0u, 1u)), pc.beam_optim_buffer.get_distance_at(beam_coords - uint2(0u, 1u) + uint2(1u, 0u))),
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 0u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 0u))),
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 1u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 1u))),
+        );
+    } else {
+        dist = min3(
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords - uint2(1u, 0u)), pc.beam_optim_buffer.get_distance_at(beam_coords - uint2(1u, 0u) + uint2(0u, 1u))),
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 0u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(0u, 1u))),
+            min(pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 0u)), pc.beam_optim_buffer.get_distance_at(beam_coords + uint2(1u, 1u))),
+        );
+    }
+    var ray = Ray(pc.camera_position, normalize(input.ray_direction));
+    ray.position += dist * ray.direction;
     if (let hit = pc.tree64.raycast(ray, 1.e6)) {
         let half_lambert_diffuse_factor = dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5;
         var light_multiplier = 0.5;

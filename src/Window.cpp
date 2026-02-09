@@ -32,6 +32,7 @@ Window::Window(char const* const title, glm::uvec2 const dimensions) {
 
     glfwSetWindowUserPointer(m_window, this);
 
+    // TODO: move this logic to the window user
     glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key,
         [[maybe_unused]] int const scancode, int const action, [[maybe_unused]] int const mods) noexcept {
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
@@ -125,9 +126,9 @@ glm::ivec2 Window::framebuffer_dimensions() const {
     return glm::ivec2(width, height);
 }
 
-glm::ivec2 Window::wait_for_valid_framebuffer() const {
+glm::uvec2 Window::wait_for_valid_framebuffer() const {
     auto framebuffer_dimensions = this->framebuffer_dimensions();
-    while (framebuffer_dimensions.x == 0 || framebuffer_dimensions.y == 0) {
+    while (framebuffer_dimensions.x <= 0 || framebuffer_dimensions.y <= 0) {
         glfwWaitEvents();
         framebuffer_dimensions = this->framebuffer_dimensions();
     }

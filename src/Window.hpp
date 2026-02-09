@@ -33,7 +33,7 @@ public:
 
     [[nodiscard]] bool should_close() const;
     [[nodiscard]] glm::ivec2 framebuffer_dimensions() const;
-    glm::ivec2 wait_for_valid_framebuffer() const;
+    glm::uvec2 wait_for_valid_framebuffer() const;
 
     [[nodiscard]] bool fullscreen_status();
     void set_fullscreen_status(bool fullscreen_status);

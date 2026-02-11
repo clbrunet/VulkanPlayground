@@ -193,6 +193,7 @@ struct HosekWilkieSkyRenderingParameters {
 struct BeamOptimBuffer {
     uint2 dimensions;
     float* distances;
+    float max_distance;
 
     float get_distance_at(const uint2 id) {
         return distances[id.y * dimensions.x + id.x];
@@ -204,18 +205,18 @@ struct BeamOptimBuffer {
 };
 
 struct PushConstants {
-    float3 camera_position;
-    float3 to_sun_direction;
-    HosekWilkieSkyRenderingParameters* hosek_wilkie_sky_rendering_parameters;
-    float2 half_attachment_dimensions;
     BeamOptimBuffer beam_optim_buffer;
-    Tree64 tree64;
+    float3 camera_position;
     float3x3 camera_rotation;
+    float3 to_sun_direction;
+    float2 half_attachment_dimensions;
+    HosekWilkieSkyRenderingParameters* hosek_wilkie_sky_rendering_parameters;
+    Tree64 tree64;
 };
 [vk::push_constant]
 PushConstants pc;
 
-static const float HALF_VERTICAL_FOV = radians(75. / 2.);
+static const float HALF_VERTICAL_FOV = radians(75. / 2.); // This must match the CPU side!
 static const float RAY_FORWARD = 1. / tan(HALF_VERTICAL_FOV);
 
 [shader("compute")]
@@ -230,14 +231,8 @@ void main(const uint2 dispatch_thread_id: SV_DispatchThreadID) {
         RAY_FORWARD
     ));
     let ray = Ray(pc.camera_position, normalize(direction));
-
-    let focal_length = pc.half_attachment_dimensions.y / tan(HALF_VERTICAL_FOV);
-    static const float BEAM_PIXEL_SIZE = 2.;
-    static const float BEAM_PIXELS_DIAGONAL_SIZE = sqrt(2. * pow(BEAM_PIXEL_SIZE, 2.));
-    let max_beam_distance = focal_length / BEAM_PIXELS_DIAGONAL_SIZE - 0.01; // TODO: move to CPU and add comments so CPU-GPU FOV always match 
-
-    let hit = pc.tree64.raycast(ray, max_beam_distance);
-    let dist = hit.hasValue ? hit.value.distance - 0.01 : max_beam_distance;
+    let hit = pc.tree64.raycast(ray, pc.beam_optim_buffer.max_distance);
+    let dist = hit.hasValue ? hit.value.distance - 0.01 : pc.beam_optim_buffer.max_distance;
     pc.beam_optim_buffer.set_distance_at(dispatch_thread_id, dist);
 }
 

@@ -26,6 +26,7 @@ struct GpuTree64 {
 struct GpuBeamOptimBuffer {
     glm::uvec2 dimensions = glm::uvec2(0u);
     vk::DeviceAddress distances_device_address = 0u;
+    float max_distance = 0.f;
 };
 #pragma pack(pop)
 

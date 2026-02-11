@@ -24,13 +24,13 @@ namespace vp {
 
 #pragma pack(push, 1)
 struct PushConstants {
-    glm::vec3 camera_position;
-    glm::vec3 to_sun_direction;
-    vk::DeviceAddress hosek_wilkie_sky_rendering_parameters_device_address;
-    glm::vec2 half_attachment_dimensions;
     GpuBeamOptimBuffer beam_optim_buffer;
-    GpuTree64 tree64;
+    glm::vec3 camera_position;
     glm::mat3 camera_rotation;
+    glm::vec3 to_sun_direction;
+    glm::vec2 half_attachment_dimensions;
+    vk::DeviceAddress hosek_wilkie_sky_rendering_parameters_device_address;
+    GpuTree64 tree64;
 };
 
 struct HosekWilkieSkyRenderingParameters {
@@ -187,6 +187,11 @@ void Application::recreate_swapchain() {
     m_gpu_beam_optim_buffer.distances_device_address = m_vk_ctx.device.getBufferAddress(vk::BufferDeviceAddressInfo{
         .buffer = m_beam_optim_distances_buffer,
     });
+    constexpr auto HALF_VERTICAL_FOV = glm::radians(75.f / 2.f); // This must match the GPU side!
+    auto const focal_length = static_cast<float>(extent.y) / 2.f / glm::tan(HALF_VERTICAL_FOV);
+    constexpr auto BEAM_PIXEL_SIZE = 2.f;
+    auto const BEAM_PIXELS_DIAGONAL_SIZE = glm::sqrt(2.f * glm::pow(BEAM_PIXEL_SIZE, 2.f));
+    m_gpu_beam_optim_buffer.max_distance = focal_length / BEAM_PIXELS_DIAGONAL_SIZE - 0.01f;
 
     m_should_recreate_swapchain = false;
 }
@@ -505,13 +510,13 @@ void Application::record_frame(vk::CommandBuffer const command_buffer, Swapchain
     auto const swapchain_dimensions = glm::uvec2(swapchain_extent.width, swapchain_extent.height);
     if (m_gpu_tree64.depth > 0u) {
         auto const push_constants = PushConstants{
-            .camera_position = m_camera.position(),
-            .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
-            .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
-            .half_attachment_dimensions = glm::vec2(swapchain_dimensions) / 2.f,
             .beam_optim_buffer = m_gpu_beam_optim_buffer,
-            .tree64 = m_gpu_tree64,
+            .camera_position = m_camera.position(),
             .camera_rotation = m_camera.rotation(),
+            .to_sun_direction = cartesian_direction_from_spherical(m_sun_elevation, m_sun_rotation),
+            .half_attachment_dimensions = glm::vec2(swapchain_dimensions) / 2.f,
+            .hosek_wilkie_sky_rendering_parameters_device_address = m_hosek_wilkie_sky_rendering_parameters_device_address,
+            .tree64 = m_gpu_tree64,
         };
         command_buffer.pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eCompute
             | vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,

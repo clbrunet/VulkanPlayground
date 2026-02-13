@@ -129,7 +129,12 @@ void Application::run() {
 }
 
 void Application::init_window() {
-    m_window.set_framebuffer_callback([&]([[maybe_unused]] uint16_t const width, [[maybe_unused]] uint16_t const height) {
+    m_window.set_key_callback([&](int const key, int const action, [[maybe_unused]] int const mods) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+            m_window.set_should_close(true);
+        }
+    });
+    m_window.set_framebuffer_callback([&]([[maybe_unused]] int const width, [[maybe_unused]] int const height) {
         m_should_recreate_swapchain = true;
     });
 }

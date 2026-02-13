@@ -29,21 +29,10 @@ Window::Window(char const* const title, glm::uvec2 const dimensions) {
     if (m_window == nullptr) {
         throw std::runtime_error("glfwCreateWindow");
     }
-
     glfwSetWindowUserPointer(m_window, this);
-
-    // TODO: move this logic to the window user
-    glfwSetKeyCallback(m_window, [](GLFWwindow* const window, int const key,
-        [[maybe_unused]] int const scancode, int const action, [[maybe_unused]] int const mods) noexcept {
-        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-            glfwSetWindowShouldClose(window, true);
-        }
-    });
-
     glfwSetScrollCallback(m_window, [](GLFWwindow* const window, [[maybe_unused]] double const xoffset, double const yoffset) noexcept {
         reinterpret_cast<Window*>(glfwGetWindowUserPointer(window))->m_scroll_delta = static_cast<float>(yoffset);
     });
-
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
@@ -67,12 +56,25 @@ Window::~Window() {
     glfwTerminate();
 }
 
-void Window::set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> framebuffer_callback) {
+void Window::set_key_callback(std::function<void(int, int, int)> key_callback) {
+    using NoExceptGLFWkeyfun = void (*)(GLFWwindow* window, int key, int scancode, int action, int mods) noexcept;
+    auto callback = NoExceptGLFWkeyfun{ nullptr };
+    if (key_callback) {
+        callback = [](GLFWwindow* const window, int const key, [[maybe_unused]] int const scancode,
+            int const action, [[maybe_unused]] int const mods) noexcept {
+            reinterpret_cast<Window*>(glfwGetWindowUserPointer(window))->m_key_callback(key, action, mods);
+        };
+    }
+    glfwSetKeyCallback(m_window, callback);
+    m_key_callback = std::move(key_callback);
+}
+
+void Window::set_framebuffer_callback(std::function<void(int, int)> framebuffer_callback) {
     using NoExceptGLFWframebuffersizefun = void (*)(GLFWwindow* window, int width, int height) noexcept;
     auto callback = NoExceptGLFWframebuffersizefun{ nullptr };
     if (framebuffer_callback) {
         callback = [](GLFWwindow* const window, int const width, int const height) noexcept {
-            reinterpret_cast<Window*>(glfwGetWindowUserPointer(window))->m_framebuffer_size_callback(static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            reinterpret_cast<Window*>(glfwGetWindowUserPointer(window))->m_framebuffer_size_callback(width, height);
         };
     }
     glfwSetFramebufferSizeCallback(m_window, callback);
@@ -117,6 +119,10 @@ void Window::poll_events() {
 
 bool Window::should_close() const {
     return static_cast<bool>(glfwWindowShouldClose(m_window));
+}
+
+void Window::set_should_close(bool const should_close) {
+    glfwSetWindowShouldClose(m_window, should_close);
 }
 
 glm::ivec2 Window::framebuffer_dimensions() const {

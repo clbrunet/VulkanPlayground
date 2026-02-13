@@ -22,7 +22,10 @@ public:
     Window& operator=(Window const& other) = delete;
     Window& operator=(Window&& other) = delete;
 
-    void set_framebuffer_callback(std::function<void(uint16_t, uint16_t)> framebuffer_callback);
+    // callback arguments: int key, int action, int mods
+    void set_key_callback(std::function<void(int, int, int)> key_callback);
+    // callback arguments: int width, int height
+    void set_framebuffer_callback(std::function<void(int, int)> framebuffer_callback);
 
     std::span<char const* const> get_required_instance_extensions() const;
     VkSurfaceKHR create_surface(VkInstance instance) const;
@@ -32,6 +35,8 @@ public:
     void poll_events();
 
     [[nodiscard]] bool should_close() const;
+    void set_should_close(bool should_close);
+
     [[nodiscard]] glm::ivec2 framebuffer_dimensions() const;
     glm::uvec2 wait_for_valid_framebuffer() const;
 
@@ -59,7 +64,8 @@ public:
 private:
     GLFWwindow* m_window = nullptr;
     nfdwindowhandle_t m_native_handle = {};
-    std::function<void(uint16_t, uint16_t)> m_framebuffer_size_callback;
+    std::function<void(int, int, int)> m_key_callback;
+    std::function<void(int, int)> m_framebuffer_size_callback;
     float m_last_time = 0.f;
     float m_delta_time = 0.f;
     glm::vec2 m_last_cursor_position = glm::vec2(0.f);

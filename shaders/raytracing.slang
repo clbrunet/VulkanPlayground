@@ -279,13 +279,14 @@ float4 main(const Interpolants input): SV_Target {
     var ray = Ray(pc.camera_position, normalize(input.ray_direction));
     ray.position += dist * ray.direction;
     if (let hit = pc.tree64.raycast(ray, 1.e6)) {
-        let half_lambert_diffuse_factor = dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5;
+        let half_lambertian_diffuse_factor = dot(hit.normal, pc.to_sun_direction) * 0.5 + 0.5;
         var light_multiplier = 0.5;
-        if (half_lambert_diffuse_factor > 0.5) {
-            let to_sun_hit = pc.tree64.raycast(Ray(hit.position + hit.normal * 0.005, pc.to_sun_direction), 1.e6);
+        if (half_lambertian_diffuse_factor > 0.5) {
+            let voxel_face_center = select(hit.normal == int3(0), floor(hit.position) + 0.5, hit.position + hit.normal * 0.005);
+            let to_sun_hit = pc.tree64.raycast(Ray(voxel_face_center, pc.to_sun_direction), 1.e6);
             light_multiplier = to_sun_hit.hasValue ? 0.5 : 1.;
         }
-        return float4(float3(light_multiplier * half_lambert_diffuse_factor), 1.);
+        return float4(float3(light_multiplier * half_lambertian_diffuse_factor), 1.);
     }
     return float4(pc.hosek_wilkie_sky_rendering_parameters->get_sky_color(ray.direction), 1.);
 }
